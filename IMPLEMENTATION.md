@@ -240,3 +240,98 @@ SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 5. Maintain responsive design across all breakpoints
 6. Follow TypeScript best practices
 7. Write comprehensive documentation for new features 
+
+## Reinforcement Learning from Human Feedback (RLHF)
+
+The Climate Economy Ecosystem implements a comprehensive RLHF system to continuously improve AI responses based on user feedback.
+
+### RLHF Database Schema
+
+#### reasoning_steps
+```sql
+CREATE TABLE reasoning_steps (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    chat_id UUID REFERENCES chats(id) ON DELETE CASCADE,
+    step_content TEXT NOT NULL,
+    step_order INTEGER NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+```
+
+#### chat_feedback (extensions)
+```sql
+ALTER TABLE chat_feedback
+ADD COLUMN step_id UUID REFERENCES reasoning_steps(id) ON DELETE CASCADE,
+ADD COLUMN feedback_score INTEGER CHECK (feedback_score >= 1 AND feedback_score <= 5),
+ADD COLUMN feedback_type TEXT DEFAULT 'message';
+```
+
+### Feedback Collection Components
+
+1. **StepFeedback.jsx**
+   - Located at: `/components/Chat/StepFeedback.jsx`
+   - Collects feedback on individual reasoning steps
+   - Provides thumbs up/down and optional star rating
+
+2. **StreamingResponse.jsx**
+   - Located at: `/components/Chat/StreamingResponse.jsx`
+   - Enhanced to display reasoning steps
+   - Integrates step-level feedback UI components
+
+### RLHF API Endpoints
+
+```javascript
+POST /api/assistant/feedback
+```
+- Handles submission of both message-level and step-level feedback
+- Stores feedback in the chat_feedback table
+- Updates user satisfaction scores
+- Forwards feedback to the metrics service
+
+### Machine Learning Components
+
+1. **Reward Model**
+   - Located at: `/lib/ml/reward_model.py`
+   - Predicts user satisfaction from query-response pairs
+   - Trained on historical user feedback data
+
+2. **Feedback Processor**
+   - Located at: `/lib/ml/feedback_processor.py`
+   - Prepares feedback data for model training
+   - Converts raw feedback into training examples
+
+3. **RLHF Training Script**
+   - Located at: `/tools/train_rlhf.py`
+   - Trains the reward model based on feedback data
+   - Implements PPO (Proximal Policy Optimization) for policy model training
+
+### Training Automation
+
+1. **GitHub Workflow**
+   - Located at: `/.github/workflows/rlhf_training.yml`
+   - Triggers weekly training runs
+   - Stores model artifacts for deployment
+
+2. **Shell Script**
+   - Located at: `/scripts/train_model.sh`
+   - Options for training reward model, PPO fine-tuning, or both
+   - Handles dependency checking and environment setup
+
+### Metrics Integration
+
+The RLHF system integrates with the existing metrics pipeline:
+
+1. **MetricsService.js**
+   - New method: `trackChatFeedback`
+   - Tracks feedback events for analytics
+
+2. **Metrics Dashboard**
+   - New section for RLHF metrics
+   - Visualizes feedback distribution and model performance
+
+### Future Improvements
+
+Planned enhancements to the RLHF system:
+- Multi-objective optimization (balancing helpfulness, accuracy, factuality)
+- Enhanced feedback collection with in-line annotations
+- Advanced training techniques (DPO, RRHF) 

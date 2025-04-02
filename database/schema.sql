@@ -117,3 +117,26 @@ BEGIN
   LIMIT match_count;
 END;
 $$; 
+
+-- RLHF Schema - Reinforcement Learning from Human Feedback
+
+-- Chat reasoning steps table
+CREATE TABLE IF NOT EXISTS reasoning_steps (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    chat_id UUID REFERENCES chats(id) ON DELETE CASCADE,
+    step_content TEXT NOT NULL,
+    step_order INTEGER NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Chat feedback table extensions (assumes chat_feedback table exists)
+-- Add columns to store step-level feedback and rating scales
+ALTER TABLE chat_feedback
+ADD COLUMN IF NOT EXISTS step_id UUID REFERENCES reasoning_steps(id) ON DELETE CASCADE,
+ADD COLUMN IF NOT EXISTS feedback_score INTEGER CHECK (feedback_score >= 1 AND feedback_score <= 5),
+ADD COLUMN IF NOT EXISTS feedback_type TEXT DEFAULT 'message';
+
+-- Performance indices
+CREATE INDEX IF NOT EXISTS idx_reasoning_steps_chat_id ON reasoning_steps(chat_id);
+CREATE INDEX IF NOT EXISTS idx_chat_feedback_step_id ON chat_feedback(step_id);
+CREATE INDEX IF NOT EXISTS idx_chat_feedback_type ON chat_feedback(feedback_type); 
