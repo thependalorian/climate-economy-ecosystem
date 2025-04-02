@@ -20,6 +20,12 @@ class ClimateState(TypedDict):
     is_veteran: Optional[bool]
     military_data: Optional[Dict[str, Any]]
     metrics: Dict[str, Any]
+    # RLHF-related fields
+    reasoning_steps: Optional[List[Dict[str, Any]]]
+    feedback_data: Optional[Dict[str, Any]]
+    satisfaction_score: Optional[float]
+    chat_id: Optional[str]
+    message_id: Optional[str]
 
 class SearchConfig(BaseModel):
     """Configuration for search operations"""
@@ -69,4 +75,14 @@ class TrainingProgramConfig(BaseModel):
     current_skills: List[str] = []
     budget_constraint: Optional[str] = None
     is_ej_community: bool = False
-    needs_funding_assistance: bool = False 
+    needs_funding_assistance: bool = False
+
+class FeedbackConfig(BaseModel):
+    """Configuration for user feedback collection"""
+    user_id: str
+    chat_id: str
+    message_id: Optional[str] = None
+    step_id: Optional[str] = None
+    feedback_type: str  # 'positive', 'negative', etc.
+    feedback_score: Optional[int] = None  # 1-5 scale
+    feedback_details: Optional[str] = None 
