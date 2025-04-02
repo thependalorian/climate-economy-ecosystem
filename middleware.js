@@ -1,5 +1,6 @@
 import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs'
 import { NextResponse } from 'next/server'
+import { metrics_service } from './lib/monitoring/metrics_service'
 
 /**
  * NextAuth Middleware
@@ -16,6 +17,37 @@ export async function middleware(req) {
   const isLoggedIn = !!session
   const isAdmin = session?.user?.user_metadata?.role === 'admin'
   const { pathname } = req.nextUrl
+
+  // Track API performance for metrics endpoints
+  if (pathname.startsWith('/api/')) {
+    const startTime = Date.now()
+    
+    // Add a response hook to track performance after the response is processed
+    const originalRes = res.Response
+    
+    res.Response = function(...args) {
+      const result = originalRes.apply(this, args)
+      const statusCode = result.status
+      
+      // Track API performance metrics
+      try {
+        const duration = Date.now() - startTime
+        const userId = session?.user?.id
+        
+        metrics_service.track_api_performance(
+          pathname,
+          duration,
+          statusCode,
+          userId,
+          Object.fromEntries(req.nextUrl.searchParams)
+        )
+      } catch (error) {
+        console.error('Error tracking API performance:', error)
+      }
+      
+      return result
+    }
+  }
 
   // Redirect from login/register if already logged in
   if (isLoggedIn && (pathname === '/login' || pathname === '/register')) {

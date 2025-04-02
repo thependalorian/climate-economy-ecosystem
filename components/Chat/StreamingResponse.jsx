@@ -5,6 +5,37 @@ import { useSession } from 'next-auth/react';
 import { Spinner } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import StepFeedback from './StepFeedback';
+
+// Add processing for step metadata
+const processStepMetadata = (chunk) => {
+  try {
+    const data = JSON.parse(chunk);
+    if (data.type === 'step_start' || data.type === 'step_end') {
+      return {
+        isStepMetadata: true,
+        data
+      };
+    }
+  } catch (e) {
+    // Not JSON or not step metadata
+  }
+  return { isStepMetadata: false };
+};
+
+// Add reasoning step component with feedback UI
+const ReasoningStep = ({ content, stepId, chatId }) => {
+  return (
+    <div className="reasoning-step border-l-2 border-gray-200 pl-2 my-2 relative">
+      <div className="step-content prose prose-sm max-w-none">
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+          {content}
+        </ReactMarkdown>
+      </div>
+      <StepFeedback stepId={stepId} chatId={chatId} />
+    </div>
+  );
+};
 
 /**
  * StreamingResponse Component
@@ -23,6 +54,12 @@ export default function StreamingResponse({
   const [isStreaming, setIsStreaming] = useState(true);
   const [sources, setSources] = useState([]);
   const [error, setError] = useState(null);
+  // Add state for reasoning steps
+  const [steps, setSteps] = useState([]);
+  const [currentStepId, setCurrentStepId] = useState(null);
+  const [currentStepContent, setCurrentStepContent] = useState('');
+  const [chatId, setChatId] = useState(null);
+  
   const { data: session } = useSession();
   const abortControllerRef = useRef(null);
   
@@ -34,6 +71,11 @@ export default function StreamingResponse({
       setStreamedContent('');
       setSources([]);
       setError(null);
+      // Reset step-related state
+      setSteps([]);
+      setCurrentStepId(null);
+      setCurrentStepContent('');
+      setChatId(null);
       
       try {
         // Create abort controller for the fetch request
@@ -74,6 +116,35 @@ export default function StreamingResponse({
           const chunk = decoder.decode(value, { stream: true });
           
           try {
+            // Check if this is step metadata
+            const stepMetadata = processStepMetadata(chunk);
+            
+            if (stepMetadata.isStepMetadata) {
+              // Handle step metadata
+              if (stepMetadata.data.type === 'step_start') {
+                // Start a new reasoning step
+                setCurrentStepId(stepMetadata.data.step_id);
+                setCurrentStepContent('');
+                // Store chat ID if available
+                if (stepMetadata.data.chat_id && !chatId) {
+                  setChatId(stepMetadata.data.chat_id);
+                }
+              } else if (stepMetadata.data.type === 'step_end' && currentStepId) {
+                // End current reasoning step and add it to steps array
+                setSteps(prevSteps => [
+                  ...prevSteps, 
+                  { 
+                    id: currentStepId, 
+                    content: currentStepContent,
+                    order: prevSteps.length
+                  }
+                ]);
+                setCurrentStepId(null);
+                setCurrentStepContent('');
+              }
+              continue; // Skip regular content processing for metadata
+            }
+            
             // Parse the chunk as JSON if it contains a complete object
             if (chunk.trim().startsWith('{') && chunk.trim().endsWith('}')) {
               const parsedChunk = JSON.parse(chunk);
@@ -82,19 +153,38 @@ export default function StreamingResponse({
                 setSources(parsedChunk.sources);
               }
               
+              if (parsedChunk.chat_id && !chatId) {
+                setChatId(parsedChunk.chat_id);
+              }
+              
               if (parsedChunk.text) {
                 accumulatedContent += parsedChunk.text;
                 setStreamedContent(accumulatedContent);
+                
+                // Add to current step content if within a step
+                if (currentStepId) {
+                  setCurrentStepContent(prev => prev + parsedChunk.text);
+                }
               }
             } else {
               // Handle plain text streaming or partial JSON
               accumulatedContent += chunk;
               setStreamedContent(accumulatedContent);
+              
+              // Add to current step content if within a step
+              if (currentStepId) {
+                setCurrentStepContent(prev => prev + chunk);
+              }
             }
           } catch (e) {
             // If JSON parsing fails, just append the chunk
             accumulatedContent += chunk;
             setStreamedContent(accumulatedContent);
+            
+            // Add to current step content if within a step
+            if (currentStepId) {
+              setCurrentStepContent(prev => prev + chunk);
+            }
           }
         }
         
@@ -148,11 +238,27 @@ export default function StreamingResponse({
     <div className={className}>
       {streamedContent.length > 0 ? (
         <div>
-          <div className="prose prose-sm max-w-none dark:prose-invert">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-              {streamedContent}
-            </ReactMarkdown>
-          </div>
+          {steps.length > 0 ? (
+            // Render reasoning steps with feedback options
+            <div className="reasoning-steps-container mb-4">
+              <h3 className="text-sm font-medium mb-2">Reasoning Steps:</h3>
+              {steps.map((step) => (
+                <ReasoningStep 
+                  key={step.id} 
+                  content={step.content} 
+                  stepId={step.id} 
+                  chatId={chatId} 
+                />
+              ))}
+            </div>
+          ) : (
+            // Render regular content
+            <div className="prose prose-sm max-w-none dark:prose-invert">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {streamedContent}
+              </ReactMarkdown>
+            </div>
+          )}
           
           {isStreaming && (
             <div className="flex items-center mt-2">

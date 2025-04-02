@@ -126,6 +126,71 @@ POST /api/onboarding
 - Updates user profile in Supabase
 - Requires authenticated session
 
+## Metrics System
+
+The Climate Economy Ecosystem includes a comprehensive metrics system to track user engagement, profile enrichment, and job search activity.
+
+### Metrics Database Tables
+
+#### metrics
+```sql
+CREATE TABLE metrics (
+    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    user_id UUID REFERENCES profiles(id),
+    event_type TEXT NOT NULL, -- profile_enrichment, enhanced_job_search, skill_verification, etc.
+    event_data JSONB,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+```
+
+#### search_analytics
+```sql
+CREATE TABLE search_analytics (
+    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    user_id UUID REFERENCES profiles(id),
+    search_query TEXT,
+    search_type TEXT, -- enhanced, recommendation
+    result_count INTEGER,
+    search_params JSONB,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+```
+
+### Metrics Components
+
+1. **Frontend Tracking**
+   - JavaScript metrics service for client-side tracking
+   - Integrated with key components (ProfileEnrichment, EnhancedJobSearch)
+   - Tracks user interactions in real-time
+
+2. **Backend Processing**
+   - Python metrics service for server-side processing
+   - API endpoints for collecting metrics data
+   - Data aggregation for dashboard visualizations
+
+3. **Admin Dashboard**
+   - Visualizes metrics data with Chart.js
+   - Provides insights on user engagement
+   - Supports filtering by time range (7d, 30d, 90d)
+
+### Metrics API Routes
+
+```javascript
+POST /api/metrics/profile-enrichment
+POST /api/metrics/enhanced-job-search
+POST /api/metrics/skill-verification
+GET /api/admin/metrics
+```
+
+### Dashboard Interface
+
+The admin metrics dashboard (`/admin/metrics`) provides:
+- Overview statistics (total users, enriched profiles)
+- Profile enrichment trends
+- Skills distribution analysis
+- Job search activity monitoring
+- Search term popularity
+
 ## Components Structure
 
 ### Core Components

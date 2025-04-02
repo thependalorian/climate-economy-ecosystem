@@ -523,3 +523,101 @@ Please read [CONTRIBUTING.md](./CONTRIBUTING.md) for details on our code of cond
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](./LICENSE) file for details.
+
+## Profile Enrichment
+
+The profile enrichment feature uses natural language processing and web search to enhance user profiles with relevant skills based on their education, experience, and professional background. This helps improve job matching and provides more personalized job recommendations.
+
+### Key Features
+
+- **Skill Extraction**: Automatically extracts technical, transferable, and soft skills from user profiles.
+- **Web Search Integration**: Uses the Serper API to search for additional information about the user's background.
+- **Verification Interface**: Users can review and verify extracted skills before they're added to their profiles.
+- **Privacy-Focused**: Only searches for information from trusted sources within the ecosystem.
+
+### Setup Requirements
+
+1. Add your Serper API key to the `.env` file:
+   ```
+   SERPER_API_KEY=your_serper_api_key
+   ```
+
+2. Run the Supabase migration to add the required schema changes:
+   ```
+   npx supabase db push
+   ```
+
+## Enhanced Job Search
+
+The enhanced job search feature leverages user profile data and enrichment information to provide more relevant job matches and personalized recommendations.
+
+### Key Features
+
+- **Profile-Based Matching**: Uses enriched user profiles to find relevant job opportunities.
+- **Skill Matching**: Identifies jobs that match the user's technical, transferable, and soft skills.
+- **Recommendations**: Provides job recommendations based on the user's profile and interests.
+- **Member Company Focus**: Prioritizes jobs from member companies within the climate economy ecosystem.
+
+### Usage
+
+1. Access the enhanced job search at `/jobs/enhanced-search`.
+2. For best results, complete the profile enrichment process first.
+3. Use the search filters to refine results by sector, skills, location, and more.
+
+## Metrics Dashboard
+
+The metrics dashboard provides comprehensive analytics on user engagement, profile enrichment, and job search activity within the Climate Economy Ecosystem.
+
+### Key Features
+
+- **Real-time Metrics**: Displays up-to-date statistics on user activity and engagement.
+- **Profile Enrichment Insights**: Tracks profile enrichment metrics, including skills verification rates and distribution.
+- **Job Search Analytics**: Monitors search patterns, recommendation effectiveness, and user interactions.
+- **Time-based Filtering**: View metrics for different time periods (7 days, 30 days, or 90 days).
+- **Chart Visualizations**: Visualizes trends and patterns with interactive charts and graphs.
+
+### Components
+
+The metrics system consists of:
+
+- **Frontend Tracking**: Client-side metrics collection in UI components.
+- **Backend Processing**: Server-side aggregation and analysis.
+- **Admin Dashboard**: Visualization interface for administrators.
+- **Python Metrics Service**: Advanced metrics processing and storage.
+
+### Usage
+
+1. Access the metrics dashboard at `/admin/metrics`.
+2. Use the time range selectors to adjust the data timeframe.
+3. Navigate between different metric tabs (Overview, Profile Enrichment, Job Search).
+4. Export or share insights as needed for reporting.
+
+### Reinforcement Learning from Human Feedback (RLHF)
+
+The Climate Economy Ecosystem includes a comprehensive RLHF system that captures user feedback at multiple levels:
+
+- Message-level feedback (thumbs up/down on entire responses)
+- Step-level feedback (targeted feedback on specific reasoning steps)
+- Numeric rating scale (1-5 star ratings)
+
+This feedback data is used to:
+1. Train a reward model that predicts user satisfaction
+2. Fine-tune the language model using Proximal Policy Optimization (PPO)
+3. Continuously improve response quality based on user preferences
+
+The system includes:
+- Database schemas for capturing structured feedback
+- Client-side components for collecting user ratings
+- API endpoints for storing and retrieving feedback
+- Training scripts for model optimization
+- GitHub workflow for automated retraining
+
+To train the model with RLHF:
+```bash
+# Run the training script
+./scripts/train_model.sh
+
+# Options: reward, ppo, or both
+./scripts/train_model.sh reward  # Train only reward model
+./scripts/train_model.sh ppo     # Fine-tune using PPO
+```
