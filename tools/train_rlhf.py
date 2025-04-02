@@ -1,211 +1,353 @@
 #!/usr/bin/env python3
 """
-RLHF Training Pipeline for Climate Economy Ecosystem
+RLHF Training Script for Climate Economy Ecosystem
 
-This script trains the reward model and performs RL fine-tuning
-using human feedback data.
+This script trains the reward model and policy model (PPO) for the 
+reinforcement learning from human feedback (RLHF) system.
+
+Usage:
+    python train_rlhf.py reward  # Train only the reward model
+    python train_rlhf.py ppo     # Train only the policy model
+    python train_rlhf.py both    # Train both reward and policy models
 """
 
 import os
 import sys
-import json
 import argparse
+import logging
+import json
+import torch
+import pandas as pd
+import numpy as np
 from datetime import datetime
-from typing import Dict, List, Any
+from tqdm import tqdm
+from transformers import (
+    AutoModelForSequenceClassification,
+    AutoTokenizer,
+    AutoModelForCausalLM,
+    Trainer,
+    TrainingArguments
+)
+from datasets import Dataset
+import supabase
 
-# Add parent directory to sys.path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler("rlhf_training.log"),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
-from lib.ml.reward_model import ClimateRewardModel
-from lib.ml.feedback_processor import FeedbackProcessor
-from transformers import AutoModelForCausalLM, AutoTokenizer
-from trl import PPOTrainer, PPOConfig
-from trl.core import LengthSampler
+# Paths
+REWARD_MODEL_DIR = os.path.join(os.getcwd(), 'data', 'reward_model')
+POLICY_MODEL_DIR = os.path.join(os.getcwd(), 'data', 'rlhf_model')
 
-def train_reward_model(args):
-    """Train the reward model on feedback data"""
-    print("Training reward model...")
+# Make sure directories exist
+os.makedirs(REWARD_MODEL_DIR, exist_ok=True)
+os.makedirs(POLICY_MODEL_DIR, exist_ok=True)
+
+# Supabase configuration
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
+
+class FeedbackProcessor:
+    """Processes chat feedback data for RLHF training"""
     
-    # Initialize processor and prepare data
-    processor = FeedbackProcessor()
-    train_data, test_data = processor.prepare_training_data()
-    
-    print(f"Prepared training data: {len(train_data)} examples")
-    print(f"Prepared testing data: {len(test_data)} examples")
-    
-    # Initialize and train reward model
-    reward_model = ClimateRewardModel(model_name=args.reward_base_model)
-    training_stats = reward_model.train(
-        train_data=train_data,
-        validation_data=test_data,
-        batch_size=args.batch_size,
-        epochs=args.epochs,
-        learning_rate=args.learning_rate
-    )
-    
-    # Save training stats
-    stats_file = os.path.join(
-        os.getcwd(), 
-        'data', 
-        'reward_model', 
-        f'training_stats_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json'
-    )
-    
-    with open(stats_file, 'w') as f:
-        json.dump(training_stats, f)
+    def __init__(self):
+        """Initialize Supabase client for data retrieval"""
+        if not SUPABASE_URL or not SUPABASE_KEY:
+            raise ValueError("SUPABASE_URL and SUPABASE_SERVICE_KEY must be set")
         
-    print(f"Saved training stats to {stats_file}")
-    print("Reward model training complete!")
+        # Initialize Supabase client
+        self.supabase = supabase.create_client(SUPABASE_URL, SUPABASE_KEY)
+        
+    def fetch_feedback_data(self):
+        """Fetch feedback data from Supabase"""
+        logger.info("Fetching feedback data from Supabase...")
+        
+        # Get feedback data
+        response = self.supabase.table("chat_feedback").select(
+            "id, message_id, step_id, feedback_type, feedback_score, user_id, feedback_time"
+        ).execute()
+        
+        if not response.data:
+            logger.warning("No feedback data found")
+            return None
+        
+        # Convert to DataFrame
+        feedback_df = pd.DataFrame(response.data)
+        logger.info(f"Retrieved {len(feedback_df)} feedback entries")
+        
+        # Get chat messages data
+        message_ids = feedback_df.message_id.dropna().unique().tolist()
+        if message_ids:
+            messages_response = self.supabase.table("chat_messages").select(
+                "id, content, user_query"
+            ).in_("id", message_ids).execute()
+            
+            messages_df = pd.DataFrame(messages_response.data)
+            if not messages_df.empty:
+                messages_dict = dict(zip(messages_df.id, zip(messages_df.user_query, messages_df.content)))
+            else:
+                messages_dict = {}
+        else:
+            messages_dict = {}
+        
+        # Get reasoning steps data
+        step_ids = feedback_df.step_id.dropna().unique().tolist()
+        if step_ids:
+            steps_response = self.supabase.table("reasoning_steps").select(
+                "id, chat_id, step_content, step_order"
+            ).in_("id", step_ids).execute()
+            
+            steps_df = pd.DataFrame(steps_response.data)
+            if not steps_df.empty:
+                chat_ids = steps_df.chat_id.unique().tolist()
+                
+                # Get chat data for user queries
+                chats_response = self.supabase.table("chats").select(
+                    "id, query"
+                ).in_("id", chat_ids).execute()
+                
+                chats_df = pd.DataFrame(chats_response.data)
+                chats_dict = dict(zip(chats_df.id, chats_df.query))
+                
+                # Map chat queries to steps
+                steps_df['user_query'] = steps_df.chat_id.map(lambda x: chats_dict.get(x, ""))
+                steps_dict = dict(zip(steps_df.id, zip(steps_df.user_query, steps_df.step_content)))
+            else:
+                steps_dict = {}
+        else:
+            steps_dict = {}
+        
+        # Add query and response to feedback data
+        def get_query_response(row):
+            if pd.notna(row.message_id) and row.message_id in messages_dict:
+                return messages_dict[row.message_id]
+            elif pd.notna(row.step_id) and row.step_id in steps_dict:
+                return steps_dict[row.step_id]
+            return (None, None)
+        
+        # Add query and response columns
+        query_response = feedback_df.apply(get_query_response, axis=1)
+        feedback_df['query'] = [qr[0] for qr in query_response]
+        feedback_df['response'] = [qr[1] for qr in query_response]
+        
+        # Convert feedback to scores
+        feedback_df['score'] = feedback_df.apply(
+            lambda x: x.feedback_score if pd.notna(x.feedback_score) else 
+                      (5 if x.feedback_type == 'positive' else 1), 
+            axis=1
+        )
+        
+        # Filter out rows without query or response
+        complete_df = feedback_df.dropna(subset=['query', 'response']).copy()
+        logger.info(f"Processed {len(complete_df)} feedback entries with complete data")
+        
+        return complete_df
+    
+    def prepare_training_data(self, test_size=0.2, random_state=42):
+        """Prepare training and test datasets"""
+        # Fetch and process data
+        data_df = self.fetch_feedback_data()
+        if data_df is None or len(data_df) < 10:
+            logger.error("Insufficient data for training")
+            return None, None
+        
+        # Normalize scores to [0, 1] range
+        data_df['normalized_score'] = (data_df['score'] - 1) / 4  # Convert 1-5 to 0-1
+        
+        # Shuffle data
+        data_df = data_df.sample(frac=1, random_state=random_state).reset_index(drop=True)
+        
+        # Split into train and test
+        split_idx = int(len(data_df) * (1 - test_size))
+        train_df = data_df.iloc[:split_idx]
+        test_df = data_df.iloc[split_idx:]
+        
+        logger.info(f"Split data into {len(train_df)} training and {len(test_df)} test samples")
+        
+        return train_df, test_df
 
-def train_ppo(args):
-    """Train language model with PPO using reward model"""
-    print("Setting up PPO training...")
+class RewardModel:
+    """Reward model for Climate Economy assistant responses"""
     
-    # Load base model and tokenizer
-    model = AutoModelForCausalLM.from_pretrained(args.base_model)
-    tokenizer = AutoTokenizer.from_pretrained(args.base_model)
-    
-    # Ensure tokenizer has padding token
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
-    
-    # Load reward model
-    reward_model = ClimateRewardModel()
-    
-    # Initialize PPO config
-    ppo_config = PPOConfig(
-        batch_size=args.batch_size,
-        mini_batch_size=args.mini_batch_size,
-        learning_rate=args.ppo_learning_rate,
-        optimize_cuda_cache=True,
-        early_stopping=True,
-        target_kl=0.1,
-        kl_penalty=0.2
-    )
-    
-    # Initialize PPO trainer
-    ppo_trainer = PPOTrainer(
-        config=ppo_config,
-        model=model,
-        tokenizer=tokenizer,
-        ref_model=model,
-        dataset=None  # Will use on-the-fly generation
-    )
-    
-    # Get query data - use processor to get recent questions from chats
-    processor = FeedbackProcessor()
-    feedback_data = processor.fetch_feedback_data(days_back=90)
-    queries = feedback_data['query'].unique().tolist()
-    
-    # If no queries, use some examples
-    if not queries:
-        queries = [
-            "What clean energy jobs are available near Boston?",
-            "How can I transition from oil and gas to renewable energy?",
-            "What training programs are available for solar installation?",
-            "How can I translate my military experience to clean energy?",
-            "Are there clean energy opportunities in Springfield?"
-        ]
-    
-    # Response length sampling
-    response_length_sampler = LengthSampler(128, 384)
-    
-    # Train for specified number of steps
-    print(f"Starting PPO training for {args.ppo_steps} steps...")
-    
-    for step in range(args.ppo_steps):
-        # Sample queries
-        batch_indices = list(range(len(queries)))
-        if len(batch_indices) > args.batch_size:
-            batch_indices = batch_indices[:args.batch_size]
-        batch_queries = [queries[i] for i in batch_indices]
+    def __init__(self, 
+                 model_name="distilroberta-base", 
+                 device=None):
+        """Initialize the reward model"""
+        self.device = device or ('cuda' if torch.cuda.is_available() else 'cpu')
+        logger.info(f"Using device: {self.device}")
         
-        # Tokenize queries
-        query_tensors = [
-            tokenizer(query, return_tensors="pt").input_ids.squeeze()
-            for query in batch_queries
-        ]
-        
-        # Generate responses from model
-        response_tensors = []
-        for query in query_tensors:
-            response_length = response_length_sampler()
-            response = ppo_trainer.generate(
-                query.unsqueeze(0), 
-                max_new_tokens=response_length
+        # If fine-tuned model exists, load it
+        if os.path.exists(os.path.join(REWARD_MODEL_DIR, 'config.json')):
+            logger.info(f"Loading existing model from {REWARD_MODEL_DIR}")
+            self.model = AutoModelForSequenceClassification.from_pretrained(REWARD_MODEL_DIR)
+            self.tokenizer = AutoTokenizer.from_pretrained(REWARD_MODEL_DIR)
+        else:
+            logger.info(f"Initializing new model: {model_name}")
+            self.model = AutoModelForSequenceClassification.from_pretrained(
+                model_name, 
+                num_labels=1  # Scalar reward score
             )
-            response_tensors.append(response.squeeze())
+            self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+            
+        self.model.to(self.device)
         
-        # Decode responses
-        batch_responses = [
-            tokenizer.decode(response_tensor)
-            for response_tensor in response_tensors
-        ]
-        
-        # Compute rewards
-        rewards = []
-        for query, response in zip(batch_queries, batch_responses):
-            reward = reward_model.compute_reward(query, response)
-            rewards.append(reward)
-        
-        # Run PPO step
-        stats = ppo_trainer.step(query_tensors, response_tensors, rewards)
-        
-        # Log progress
-        if step % 10 == 0:
-            print(f"Step {step}: Mean reward = {stats['ppo/mean_scores']:.4f}")
+    def tokenize_data(self, query, response):
+        """Tokenize query-response pairs"""
+        return self.tokenizer(
+            [f"User: {q}\n\nAssistant: {r}" for q, r in zip(query, response)],
+            padding="max_length",
+            truncation=True,
+            max_length=512,
+            return_tensors="pt"
+        )
     
-    # Save fine-tuned model
-    output_dir = os.path.join(
-        os.getcwd(), 
-        'data', 
-        'rlhf_model', 
-        f'model_{datetime.now().strftime("%Y%m%d_%H%M%S")}'
-    )
-    os.makedirs(output_dir, exist_ok=True)
+    def train(self, train_df, test_df=None, epochs=3, batch_size=8, learning_rate=2e-5):
+        """Train the reward model on human feedback data"""
+        logger.info("Preparing datasets for training...")
+        
+        # Create datasets
+        def preprocess_function(examples):
+            return self.tokenize_data(examples["query"], examples["response"])
+        
+        train_dataset = Dataset.from_pandas(train_df[['query', 'response', 'normalized_score']])
+        train_dataset = train_dataset.map(
+            preprocess_function, 
+            batched=True,
+            remove_columns=['query', 'response']
+        )
+        train_dataset.set_format(
+            type='torch', 
+            columns=['input_ids', 'attention_mask', 'normalized_score'],
+            output_all_columns=True
+        )
+        
+        if test_df is not None:
+            test_dataset = Dataset.from_pandas(test_df[['query', 'response', 'normalized_score']])
+            test_dataset = test_dataset.map(
+                preprocess_function, 
+                batched=True,
+                remove_columns=['query', 'response']
+            )
+            test_dataset.set_format(
+                type='torch', 
+                columns=['input_ids', 'attention_mask', 'normalized_score'],
+                output_all_columns=True
+            )
+        else:
+            test_dataset = None
+        
+        # Setup training arguments
+        training_args = TrainingArguments(
+            output_dir=REWARD_MODEL_DIR,
+            num_train_epochs=epochs,
+            per_device_train_batch_size=batch_size,
+            per_device_eval_batch_size=batch_size,
+            learning_rate=learning_rate,
+            weight_decay=0.01,
+            evaluation_strategy="epoch" if test_dataset else "no",
+            save_strategy="epoch",
+            load_best_model_at_end=True if test_dataset else False,
+            push_to_hub=False,
+            report_to="none",
+        )
+        
+        # Define data collator
+        def data_collator(features):
+            batch = {
+                'input_ids': torch.stack([f['input_ids'] for f in features]),
+                'attention_mask': torch.stack([f['attention_mask'] for f in features]),
+                'labels': torch.tensor([f['normalized_score'] for f in features], dtype=torch.float)
+            }
+            return batch
+        
+        # Initialize trainer
+        trainer = Trainer(
+            model=self.model,
+            args=training_args,
+            train_dataset=train_dataset,
+            eval_dataset=test_dataset,
+            data_collator=data_collator,
+        )
+        
+        # Train the model
+        logger.info("Starting reward model training...")
+        trainer.train()
+        
+        # Save the model
+        logger.info(f"Saving model to {REWARD_MODEL_DIR}")
+        trainer.save_model(REWARD_MODEL_DIR)
+        self.tokenizer.save_pretrained(REWARD_MODEL_DIR)
+        
+        # Evaluate on test set
+        if test_dataset:
+            metrics = trainer.evaluate()
+            logger.info(f"Evaluation metrics: {metrics}")
+            
+            # Save metrics
+            with open(os.path.join(REWARD_MODEL_DIR, 'metrics.json'), 'w') as f:
+                json.dump(metrics, f)
+                
+            return metrics
+        
+        return None
+
+def train_reward_model():
+    """Train the reward model"""
+    logger.info("Starting reward model training process")
     
-    ppo_trainer.save_model(output_dir)
-    tokenizer.save_pretrained(output_dir)
+    # Initialize processor and model
+    processor = FeedbackProcessor()
+    train_df, test_df = processor.prepare_training_data()
     
-    print(f"Saved fine-tuned model to {output_dir}")
-    print("PPO training complete!")
+    if train_df is None or len(train_df) < 10:
+        logger.error("Insufficient data for training")
+        return False
+    
+    model = RewardModel()
+    metrics = model.train(train_df, test_df)
+    
+    logger.info("Reward model training completed")
+    return True
+
+def train_policy_model():
+    """Train the policy model using PPO"""
+    logger.info("Starting policy model training process")
+    
+    # Check if reward model exists
+    if not os.path.exists(os.path.join(REWARD_MODEL_DIR, 'config.json')):
+        logger.error("Reward model not found. Run 'python train_rlhf.py reward' first")
+        return False
+    
+    # TODO: Implement PPO training with TRL library
+    logger.info("PPO training not implemented yet")
+    
+    return True
 
 def main():
-    parser = argparse.ArgumentParser(description="RLHF Training Pipeline")
-    subparsers = parser.add_subparsers(dest="command", help="Command to run")
-    
-    # Reward model training arguments
-    reward_parser = subparsers.add_parser("reward", help="Train reward model")
-    reward_parser.add_argument("--reward-base-model", type=str, default="distilroberta-base",
-                              help="Base model for reward model")
-    reward_parser.add_argument("--batch-size", type=int, default=8,
-                             help="Batch size for training")
-    reward_parser.add_argument("--epochs", type=int, default=3,
-                             help="Number of training epochs")
-    reward_parser.add_argument("--learning-rate", type=float, default=2e-5,
-                             help="Learning rate for optimizer")
-    
-    # PPO training arguments
-    ppo_parser = subparsers.add_parser("ppo", help="Train with PPO")
-    ppo_parser.add_argument("--base-model", type=str, required=True,
-                          help="Base language model to fine-tune")
-    ppo_parser.add_argument("--batch-size", type=int, default=4,
-                          help="Batch size for PPO")
-    ppo_parser.add_argument("--mini-batch-size", type=int, default=2,
-                          help="Mini-batch size for PPO")
-    ppo_parser.add_argument("--ppo-steps", type=int, default=100,
-                          help="Number of PPO training steps")
-    ppo_parser.add_argument("--ppo-learning-rate", type=float, default=1e-5,
-                          help="Learning rate for PPO")
-    
+    """Main function to parse args and run training"""
+    parser = argparse.ArgumentParser(description="Train RLHF models")
+    parser.add_argument("mode", choices=["reward", "ppo", "both"], 
+                      help="Which model to train: reward, ppo, or both")
     args = parser.parse_args()
     
-    if args.command == "reward":
-        train_reward_model(args)
-    elif args.command == "ppo":
-        train_ppo(args)
-    else:
-        parser.print_help()
+    # Train models based on mode
+    if args.mode in ["reward", "both"]:
+        success = train_reward_model()
+        if not success and args.mode == "both":
+            logger.error("Reward model training failed, skipping policy model training")
+            return
+    
+    if args.mode in ["ppo", "both"]:
+        train_policy_model()
+    
+    logger.info("Training completed")
 
 if __name__ == "__main__":
     main() 
