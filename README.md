@@ -605,12 +605,42 @@ This feedback data is used to:
 2. Fine-tune the language model using Proximal Policy Optimization (PPO)
 3. Continuously improve response quality based on user preferences
 
-The system includes:
-- Database schemas for capturing structured feedback
-- Client-side components for collecting user ratings
-- API endpoints for storing and retrieving feedback
-- Training scripts for model optimization
-- GitHub workflow for automated retraining
+#### System Components
+
+The RLHF implementation includes:
+- Database schemas for capturing structured feedback (chat_feedback table)
+- Client-side components for collecting user ratings (StepFeedback and MessageFeedback)
+- API endpoints for storing and retrieving feedback (/api/assistant/feedback and /api/metrics/chat-feedback)
+- Metrics service integration for tracking feedback patterns
+- RLHF analytics dashboard for monitoring model performance
+- Training scripts for model optimization using the TRL library
+- GitHub workflow for automated retraining on a weekly schedule
+
+#### Feedback Collection Process
+
+The system collects feedback through multiple channels:
+1. **Message-level feedback**: Users can rate entire AI responses using thumbs up/down buttons
+2. **Step-level feedback**: Users can provide granular feedback on specific reasoning steps
+3. **Explicit ratings**: Users can provide numeric scores (1-5) for more detailed feedback
+4. **Implicit signals**: The system tracks engagement metrics like time spent reading responses
+
+#### Training Pipeline
+
+The RLHF training process follows these steps:
+1. **Data preprocessing**: Clean and prepare feedback data for training
+2. **Reward model training**: Train a model to predict user satisfaction scores
+3. **PPO fine-tuning**: Optimize the language model using reinforcement learning
+4. **Evaluation**: Test model performance against baseline on various metrics
+5. **Deployment**: Update the production model with improved weights
+
+#### Monitoring and Analytics
+
+The RLHF system includes a dedicated metrics dashboard that provides:
+- Feedback trends over time (daily, weekly, monthly)
+- Distribution of feedback scores across different user segments
+- Top areas for improvement based on negative feedback
+- Model performance metrics before and after training
+- A/B testing results comparing different model versions
 
 To train the model with RLHF:
 ```bash
@@ -620,4 +650,13 @@ To train the model with RLHF:
 # Options: reward, ppo, or both
 ./scripts/train_model.sh reward  # Train only reward model
 ./scripts/train_model.sh ppo     # Fine-tune using PPO
+./scripts/train_model.sh both    # Run the complete pipeline
 ```
+
+#### Integration with Graph Agents
+
+The RLHF system is fully integrated with the LangGraph agent framework:
+- Feedback is collected at each step of agent reasoning
+- Structured validators ensure data quality for training
+- Agent behavior is optimized based on user preferences
+- Complex workflows receive targeted improvement based on step-level feedback
