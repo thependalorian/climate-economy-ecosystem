@@ -3,6 +3,42 @@
 ## Overview
 This platform connects job seekers with clean tech opportunities in Massachusetts, with a focus on Environmental Justice communities and Gateway Cities. It uses AI-powered resume analysis to provide personalized career pathways, education recommendations, and job matches.
 
+## Table of Contents
+- [Strategic Context](#strategic-context)
+- [Target Populations](#target-populations)
+- [Target Locations](#target-locations)
+- [Core Features](#core-features)
+- [Project Structure](#project-structure)
+- [Technologies](#technologies)
+- [Implementation Strategy](#implementation-strategy)
+  - [Phase 1: Core Infrastructure](#phase-1-core-infrastructure-week-1-2)
+  - [Phase 2: Resume Analysis & Job Matching](#phase-2-resume-analysis--job-matching-week-3-4)
+  - [Phase 3: Military & International Credentials](#phase-3-military--international-credentials-week-5-6)
+  - [Phase 4: Gateway Cities & EJ Communities](#phase-4-gateway-cities--ej-communities-week-7-8)
+  - [Phase 5: Metrics & Monitoring](#phase-5-metrics--monitoring-week-9-10)
+  - [Phase 6: Hybrid Search & Real-time Features](#phase-6-hybrid-search--real-time-features-week-11-12)
+  - [Phase 7: UI/UX Polish & Performance Optimization](#phase-7-uiux-polish--performance-optimization-week-13-14)
+- [Database Schema](#database-schema)
+- [Technical Implementation](#technical-implementation)
+  - [Memory Service](#memory-service)
+  - [Agent Workflow](#agent-workflow)
+  - [Data Ingestion Process](#data-ingestion-process)
+  - [User Assessment Process](#user-assessment-process)
+- [System Architecture](#system-architecture)
+- [Integration Points](#integration-points)
+- [Getting Started](#getting-started)
+- [Deployment](#deployment)
+- [Recent Updates](#recent-updates)
+- [Prerequisites](#prerequisites)
+- [Environment Variables](#environment-variables)
+- [Installation](#installation)
+- [Using the Hybrid Search](#using-the-hybrid-search)
+- [Using Streaming Responses](#using-streaming-responses)
+- [Reinforcement Learning from Human Feedback (RLHF)](#reinforcement-learning-from-human-feedback-rlhf)
+- [Profile Enrichment](#profile-enrichment)
+- [Enhanced Job Search](#enhanced-job-search)
+- [Metrics Dashboard](#metrics-dashboard)
+
 ## Strategic Context
 The Climate Ecosystem Assistant is designed to create a just, rapid, and equitable climate transition by connecting underrepresented communities with training and career opportunities in renewable energy, clean transportation, and decarbonizing buildings.
 
@@ -26,19 +62,51 @@ Brockton, Boston, Fall River/New Bedford, Lawrence/Lowell, Springfield, Worceste
 - Real-time processing with streaming updates
 
 ## Project Structure
-- `app/`: Next.js application pages and API routes
-- `components/`: Reusable UI components with DaisyUI
-- `lib/`: Shared libraries and utilities
-- `public/`: Static files
-- `styles/`: CSS and styling based on ACT brand guidelines
-- `utils/`: Utility functions
-- `models/`: Data models
-- `hooks/`: Custom React hooks
-- `graph/`: LangGraph agent definitions
-- `state/`: State management
-- `tools/`: Tool definitions for agents
-- `prompts/`: System prompts for agents
-- `tests/`: Test files
+```
+climate_economy_ecosystem/
+├── app/                  # Next.js application pages and API routes
+│   ├── admin/            # Admin interface and dashboard
+│   ├── api/              # API routes for backend functionality
+│   ├── assistant/        # Assistant interface
+│   ├── auth/             # Authentication pages
+│   ├── dashboard/        # User dashboard
+│   └── profile/          # User profile management
+├── components/           # Reusable UI components
+│   ├── Admin/            # Admin components
+│   ├── Auth/             # Authentication components
+│   ├── Chat/             # Chat interface components
+│   ├── ClimateChat/      # Climate chat specific components
+│   ├── Dashboard/        # Dashboard components
+│   ├── EJCommunitySupport/ # Environmental Justice support
+│   ├── Feedback/         # Feedback collection components
+│   ├── Profile/          # Profile components
+│   ├── Search/           # Search interface components
+│   ├── SectorExplorer/   # Clean energy sector exploration
+│   ├── SkillsAnalysis/   # Skills analysis components
+│   └── ui/               # Generic UI components
+├── database/             # Database migrations and schema
+│   ├── migrations/       # SQL migration files
+│   └── seeds/            # Database seed data
+├── docs/                 # Documentation files
+├── graph/                # LangGraph agent definitions
+├── hooks/                # Custom React hooks
+├── lib/                  # Shared libraries
+│   ├── assistant/        # Assistant logic
+│   ├── memory/           # Memory management (mem0)
+│   ├── ml/               # Machine learning components
+│   ├── monitoring/       # Metrics and monitoring
+│   └── tools/            # Tool definitions for agents
+├── prompts/              # System prompts for agents
+├── public/               # Static files
+├── scripts/              # Utility scripts
+├── tools/                # Python tools and utilities
+│   ├── climate_economy_ecosystem/ # Tool implementations
+│   ├── examples/         # Example use cases
+│   ├── scripts/          # Tool-specific scripts
+│   ├── templates/        # Templates for generation
+│   └── utils/            # Tool utilities
+└── .github/workflows/    # GitHub Actions workflows
+```
 
 ## Technologies
 - Next.js 14 with App Router
@@ -50,154 +118,345 @@ Brockton, Boston, Fall River/New Bedford, Lawrence/Lowell, Springfield, Worceste
 
 ## Implementation Strategy
 
-### Core Architecture
-We'll implement a Python-based solution using mem0, Pydantic, and LangGraph that integrates seamlessly with the Next.js frontend:
+This section outlines the phased implementation approach for building the Climate Economy Ecosystem Assistant. Each phase has specific deliverables, dependencies, and testing criteria to ensure a structured development process.
 
-```python
-# Memory System Implementation Overview
-from mem0 import Memory
-from pydantic import BaseModel, Field
+### Phase 1: Core Infrastructure (Week 1-2)
+
+**Objective:** Set up the foundational architecture and core services.
+
+**Deliverables:**
+1. **Database Schema and Setup**
+   - Complete base schema with tables for users, memories, and events
+   - Initial migration script
+   - Vector search capabilities
+   - Integration with Supabase
+
+2. **Memory System**
+   - Implement memory storage and retrieval with mem0
+   - Vector embedding pipeline for climate data
+   - Basic search functionality
+
+3. **User Authentication**
+   - Authentication routes with Supabase Auth
+   - User login and registration interfaces
+   - Session management and persistence
+
+4. **Core Application Structure**
+   - Main application layout with auth context
+   - Landing page with introduction to the assistant
+   - Basic styling with DaisyUI
+
+5. **Chat Interface**
+   - Chat interface component
+   - Climate chat API endpoint
+   - Integration with memory and search services
+
+6. **Dashboard**
+   - User dashboard with action cards and chat
+   - Integration with user profile data
+
+7. **Knowledge Base Data Ingestion**
+   - Script for crawling and indexing company resources
+   - Company resource indexing with duplicate prevention
+   - PDF report processing and chunking for key climate reports
+   - Integration with Supabase vector search
+
+### Phase 2: Resume Analysis & Job Matching (Week 3-4)
+
+**Objective:** Implement resume parsing, skill extraction, and job matching capabilities.
+
+**Deliverables:**
+1. **User Assessment Flow**
+   - User type identification questionnaire
+   - Background assessment with targeted questions
+   - Resume upload and parsing functionality
+   - User profile creation and storage in Supabase
+
+2. **Resume Processing Pipeline**
+   - Resume parsing and content extraction
+   - Skill identification and categorization
+   - Experience level determination
+   - Military skill translation for veterans
+
+3. **Job Matching System**
+   - Skill-based job recommendation engine
+   - Company matching based on user profile
+   - Job search API and UI components
+   - Results filtering and personalization
+
+4. **Profile-Based Recommendations**
+   - Educational pathway recommendations
+   - Skill gap analysis
+   - Training program matching
+   - Career transition guidance
+
+### Phase 3: Military & International Credentials (Week 5-6)
+
+**Objective:** Implement specialized tools for veterans and international professionals.
+
+**Deliverables:**
+1. **Military Skills Translation**
+   - MOS code translation and skills mapping
+   - UI for veterans
+   - Military background extraction from resumes
+   - Integration with veteran support resources
+
+2. **International Credential Evaluation**
+   - Foreign credential analysis
+   - UI for international professionals
+   - African credentials database and matching system
+   - Credential gap analysis and recommendation engine
+
+3. **Specialized Prompts**
+   - Prompts for veteran career pathways
+   - Prompts for international credential evaluation
+   - Integration with main agent workflow
+
+4. **Profile Enhancements**
+   - Enhanced profile page with veteran/international sections
+   - Military background editor
+   - International credentials editor
+
+### Phase 4: Gateway Cities & EJ Communities (Week 7-8)
+
+**Objective:** Implement location-specific personalization and EJ community support.
+
+**Deliverables:**
+1. **Location-Based Services**
+   - Location-specific opportunity identification
+   - UI for location-based recommendations
+   - Integration with Massachusetts Gateway Cities data
+   - Geospatial search functionality
+
+2. **EJ Community Support**
+   - EJ community identification and specialized support
+   - UI for EJ community resources
+   - Distance-based opportunity filtering
+   - Support program matching for EJ communities
+
+3. **Training Program Locator**
+   - API endpoint for location-based recommendations
+   - UI for training recommendations
+   - Location-filtered training program database
+   - Support service integration for EJ communities
+
+4. **Clean Energy Sector Mapping**
+   - Sector-specific recommendation refinement
+   - Location-sector opportunity mapping
+   - UI for exploring clean energy sectors by location
+
+### Phase 5: Metrics & Monitoring (Week 9-10)
+
+**Objective:** Implement comprehensive tracking, monitoring, and feedback systems.
+
+**Deliverables:**
+1. **Metrics Service**
+   - Core metrics collection and analysis
+   - Event tracking for user interactions
+   - Performance monitoring for key API endpoints
+   - User satisfaction measurement
+
+2. **Admin Dashboard**
+   - Admin dashboard for system metrics
+   - Metrics visualization
+   - User behavior analytics
+   - Alert system for performance issues
+
+3. **Feedback Collection**
+   - API endpoint for user feedback
+   - Feedback collection UI
+   - Recommendation quality tracking
+   - A/B testing framework for recommendation approaches
+
+4. **Usage Analytics**
+   - Location and demographic usage patterns
+   - Recommendation effectiveness tracking
+   - Usage visualization
+   - Report generation for stakeholders
+
+### Phase 6: Hybrid Search & Real-time Features (Week 11-12)
+
+**Objective:** Enhance search capabilities and implement real-time features.
+
+**Deliverables:**
+1. **Hybrid Search System**
+   - Web search integration
+   - Enhanced database retrieval
+   - Combined search pipeline with ranking
+   - Advanced search UI
+   - Hybrid search API endpoint with sophisticated ranking
+   - LangSmith tracing for search analytics and debugging
+
+2. **Real-time Streaming**
+   - Integration of LangSmith tracing for debugging and analytics
+   - Token-by-token response streaming
+   - UI for streaming responses
+   - Streaming API endpoint with real-time processing
+
+3. **Notification System**
+   - Notifications API
+   - Database support for notifications
+   - Notifications UI
+   - Notifications context provider
+   - Real-time Socket.IO server
+   - Push notification support
+
+4. **Collaborative Features**
+   - Career counselor collaboration tools
+   - Shared annotation and commenting
+   - Multi-user resume review
+
+### Phase 7: UI/UX Polish & Performance Optimization (Week 13-14)
+
+**Objective:** Finalize the user interface and optimize application performance.
+
+**Deliverables:**
+1. **UI Enhancement**
+   - Design system implementation
+   - Accessibility improvements
+   - Mobile responsiveness
+   - Animation and transition refinement
+
+2. **Performance Optimization**
+   - API response time improvements
+   - Client-side caching strategy
+   - Server-side rendering optimization
+   - Database query optimization
+
+3. **Documentation**
+   - User documentation
+   - Developer documentation
+   - API documentation
+   - Deployment guide
+
+4. **Final Testing**
+   - End-to-end testing
+   - Load testing
+   - Usability testing with target populations
+   - Security audit
+
+## Database Schema
+
+### Key Tables
+
+```sql
+-- Enable UUID extension
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- Enable pgvector extension for vector embeddings
+CREATE EXTENSION IF NOT EXISTS "vector";
+
+-- climate_memories table (for mem0 storage)
+CREATE TABLE IF NOT EXISTS climate_memories (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    content TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    embedding VECTOR(1536),
+    metadata JSONB DEFAULT '{}'::JSONB,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- User profiles table
+CREATE TABLE IF NOT EXISTS user_profiles (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id TEXT UNIQUE NOT NULL,
+    name TEXT,
+    email TEXT,
+    location TEXT,
+    is_ej_community BOOLEAN DEFAULT FALSE,
+    gateway_city TEXT,
+    is_veteran BOOLEAN DEFAULT FALSE,
+    military_background JSONB,
+    international_credentials JSONB,
+    preferences JSONB DEFAULT '{}'::JSONB,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Events table for metrics tracking
+CREATE TABLE IF NOT EXISTS events (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    event_type TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    properties JSONB DEFAULT '{}'::JSONB,
+    session_id TEXT
+);
+
+-- Companies table
+CREATE TABLE IF NOT EXISTS companies (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name TEXT NOT NULL,
+    career_page TEXT,
+    location TEXT,
+    sector TEXT,
+    description TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Job opportunities table
+CREATE TABLE IF NOT EXISTS job_opportunities (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    company_id UUID REFERENCES companies(id),
+    title TEXT NOT NULL,
+    description TEXT NOT NULL,
+    location TEXT,
+    salary_range TEXT,
+    requirements JSONB,
+    is_ej_friendly BOOLEAN DEFAULT FALSE,
+    is_veteran_friendly BOOLEAN DEFAULT FALSE,
+    is_international_friendly BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Training programs table
+CREATE TABLE IF NOT EXISTS training_programs (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    title TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    location TEXT NOT NULL,
+    description TEXT NOT NULL,
+    duration TEXT NOT NULL,
+    cost TEXT,
+    funding_options JSONB,
+    requirements TEXT,
+    is_ej_focused BOOLEAN DEFAULT FALSE,
+    sector TEXT NOT NULL,
+    url TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Reasoning steps table for RLHF
+CREATE TABLE IF NOT EXISTS reasoning_steps (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    chat_id UUID REFERENCES chats(id) ON DELETE CASCADE,
+    step_content TEXT NOT NULL,
+    step_order INTEGER NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Feedback analytics table for RLHF
+CREATE TABLE IF NOT EXISTS public.feedback_analytics (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    total_feedback_count INTEGER DEFAULT 0,
+    step_feedback_count INTEGER DEFAULT 0,
+    message_feedback_count INTEGER DEFAULT 0,
+    positive_step_feedback INTEGER DEFAULT 0,
+    negative_step_feedback INTEGER DEFAULT 0,
+    positive_message_feedback INTEGER DEFAULT 0,
+    negative_message_feedback INTEGER DEFAULT 0,
+    average_score FLOAT DEFAULT 3.0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
 ```
 
-### User Authentication & Session Management
-The system uses Supabase Auth to handle user authentication, supporting:
-- Email/password authentication
-- Google OAuth integration
-- Session persistence with refresh tokens
-- Role-based access control
-- User profile management
-
-This enables personalized experiences while tracking user preferences and history across sessions.
-
-### Military Skills Translation System
-A specialized module for veterans:
-- Translates Military Occupational Specialty (MOS) codes to civilian equivalents
-- Maps military leadership experience to management opportunities
-- Identifies technical skills transferable to clean energy sectors
-- Considers military-specific certifications and training
-- Provides transition resources specifically for MA-based veterans
-
-The system handles specialized military backgrounds with precision:
-- Technical MOSs (e.g., 12P - Prime Power Production Specialist) → Civilian solar/grid technician roles
-- Logistics specialists (e.g., 88M, 92F) → Clean transportation and supply chain management
-- Infantry and combat roles → Safety management, team leadership, and quality control
-- Military engineers → Renewable infrastructure construction and project management
-- Communications specialists → Smart grid and IoT system management
-
-Example Military Translation Pipeline:
-1. Extract military background from resume
-2. Identify MOS codes and training
-3. Map to civilian equivalents using ML models
-4. Prioritize clean energy matches
-5. Generate personalized career pathways with identified skill gaps
-
-The system integrates with veteran support programs in Massachusetts, including:
-- Helmets to Hardhats for construction and renewable installation training
-- MA Hire-Vets Medallion Program participants
-- Veterans Clean Energy Job Placement Initiative
-- VA benefits coordination for training program funding
-
-### International Credential Evaluation
-For international professionals, especially from Africa and other regions:
-- Analyzes foreign degrees and certifications
-- Provides US equivalency information
-- Identifies credential gaps requiring additional certification
-- Maps international experience to Massachusetts requirements
-- Suggests credential validation services where needed
-
-The system includes comprehensive support for African credentials:
-- Nigeria: Engineering degrees from universities like University of Lagos or University of Ibadan
-- Kenya: Technical certifications from institutions like Kenya Polytechnic University
-- South Africa: Energy sector qualifications from University of Cape Town or University of Witwatersrand
-- Ghana: Renewable energy programs from Kwame Nkrumah University
-- Egypt: Engineering and technical programs from Cairo University and Alexandria University
-
-For each credential type, the system provides:
-- US academic equivalency (e.g., Bachelor of Engineering to ABET-accredited BS degree)
-- Required supplemental certifications for Massachusetts licensure
-- Bridge program recommendations to fill qualification gaps
-- Connection to Massachusetts-based professional associations for international graduates
-- Mentorship opportunities with professionals from similar backgrounds
-
-The system supports skills recognition for newcomers in Massachusetts Gateway Cities, with special focus on engineering, technical, and scientific credentials relevant to clean energy sectors.
-
-### Hybrid Search & Knowledge Retrieval
-The system combines multiple information sources:
-- Vector database with climate economy information
-- Web search capability for recent/missing information
-- MA-specific training program database
-- ACT member company information
-- Clean energy job boards data
-
-Search pipeline:
-1. Query mem0 vector database
-2. If insufficient results, trigger web search
-3. Filter for Massachusetts relevance
-4. Rank by relevance to user profile and query
-5. Blend results into personalized recommendations
-
-### Tools System for Agents
-A structured tools system enables agent capabilities:
-- WebSearchTool - Find recent climate economy information
-- DBRetrieverTool - Access local knowledge base
-- ResumeAnalyzerTool - Parse and evaluate resumes
-- SkillMapperTool - Map skills to jobs and training programs
-- GatewayCityTool - Location-specific opportunities
-- MilitaryTranslatorTool - Veteran skills translation
-- CredentialEvaluatorTool - International credential validation
-- JobMatcherTool - Connect users to opportunities
-
-Each tool is modular, reusable, and integrated into the LangGraph workflow.
-
-### Metrics & Monitoring
-A comprehensive metrics system tracks:
-- User interactions and satisfaction
-- Query performance and latency
-- Recommendation quality and acceptance
-- System health and error rates
-- Usage patterns by location and demographics
-
-Implemented with:
-- Event tracking for all user actions
-- Performance monitoring for API endpoints
-- Feedback collection on recommendations
-- A/B testing for different recommendation approaches
-- Dashboard visualizations for stakeholders
-
-### Environmental Justice Integration
-For residents of EJ communities:
-- Prioritize local opportunities within commuting distance
-- Identify training programs with support services
-- Focus on programs with stipends or financial assistance
-- Connect users with community-based organizations
-- Track outcomes for continuous improvement
-
-### Gateway Cities Focus
-Location-specific personalization for:
-- Brockton - Manufacturing and solar
-- Boston - Cleantech innovation and green buildings
-- Fall River/New Bedford - Offshore wind focus
-- Lawrence/Lowell - Energy efficiency and weatherization
-- Springfield - Clean transportation and EVs
-- Worcester - Green construction and waste management
-
-Each location has tailored resources and opportunities mapped to local economic development priorities.
-
-### Clean Energy Sector Coverage
-Specialized career pathways for key sectors:
-- Renewable Energy - Solar, wind, geothermal, hydropower
-- Energy Efficiency - Weatherization, green building, HVAC
-- Clean Transportation - EVs, charging infrastructure, public transit
-- Decarbonizing Buildings - Retrofits, heat pumps, smart systems
-- Circular Economy - Waste reduction, recycling, materials innovation
-
-### Real-time Streaming Updates
-Socket.IO implementation for responsive UX:
-- Token-by-token streaming of AI responses
-- Progress indicators for long-running operations
-- Real-time notifications for new opportunities
-- Collaborative features for career counselors
-- Resume analysis visualization during processing
+### Row Level Security (RLS) Policies
+- Users can only view and update their own profiles
+- Jobs and training programs are publicly viewable
+- Users can only manage their own saved jobs and training programs
+- RLHF feedback data is protected with appropriate policies
 
 ## Technical Implementation
 
@@ -266,72 +525,136 @@ class ClimateState(TypedDict):
     is_veteran: Optional[bool]
     military_data: Optional[Dict[str, Any]]
     metrics: Dict[str, Any]
+    # RLHF-related fields
+    reasoning_steps: Optional[List[Dict[str, Any]]]
+    feedback_data: Optional[Dict[str, Any]]
+    satisfaction_score: Optional[float]
+    chat_id: Optional[str]
+    message_id: Optional[str]
 ```
 
-### Database Schema
-```sql
--- Key database tables structure
-CREATE TABLE climate_memories (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    content TEXT NOT NULL,
-    user_id TEXT NOT NULL,
-    embedding VECTOR(1536),
-    metadata JSONB DEFAULT '{}'::JSONB,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+### Data Ingestion Process
 
--- User profiles with military and international background
-CREATE TABLE user_profiles (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id TEXT UNIQUE NOT NULL,
-    name TEXT,
-    email TEXT,
-    location TEXT,
-    is_ej_community BOOLEAN DEFAULT FALSE,
-    gateway_city TEXT,
-    is_veteran BOOLEAN DEFAULT FALSE,
-    military_background JSONB,
-    international_credentials JSONB,
-    preferences JSONB DEFAULT '{}'::JSONB,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+The data ingestion process populates our knowledge base with information from various sources that power our clean tech ecosystem assistant. This data includes company information, educational resources, climate reports, and career pathways.
 
--- Events table for metrics tracking
-CREATE TABLE events (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    event_type TEXT NOT NULL,
-    user_id TEXT NOT NULL,
-    timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    properties JSONB DEFAULT '{}'::JSONB,
-    session_id TEXT
-);
+#### Data Sources
 
--- Companies and job opportunities
-CREATE TABLE companies (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    name TEXT NOT NULL,
-    career_page TEXT,
-    location TEXT,
-    sector TEXT,
-    description TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+1. **Company Resources**: Websites and documentation from ACT member companies
+2. **Climate Reports**: PDF documents containing industry analysis and workforce needs
+3. **Educational Resources**: Training program information and curriculum details
+4. **Career Pathways**: Structured career progression paths in clean energy sectors
 
-CREATE TABLE job_opportunities (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    company_id UUID REFERENCES companies(id),
-    title TEXT NOT NULL,
-    description TEXT NOT NULL,
-    location TEXT,
-    salary_range TEXT,
-    requirements JSONB,
-    is_ej_friendly BOOLEAN DEFAULT FALSE,
-    is_veteran_friendly BOOLEAN DEFAULT FALSE,
-    is_international_friendly BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+#### Ingestion Workflow
+
+The data ingestion process follows these steps:
+
+1. **Data Source Preparation**
+   - Company data structured in `constants.py`
+   - PDF reports stored in a designated `reports` directory
+   - External URLs organized by category and company
+
+2. **Crawling & Processing**
+   - Web crawling for all company resources using an approach similar to crawl4ai
+   - PDF parsing for report documents using document loaders
+   - HTML content extraction and cleaning
+   - Smart chunking to preserve contextual meaning
+
+3. **Vector Embedding Generation**
+   - Generating embeddings using OpenAI's text-embedding-3-small model (1536 dimensions)
+   - Associating rich metadata with each embedded chunk
+
+4. **Supabase Storage**
+   - Storing documents with embeddings in Supabase's pgvector-enabled tables
+   - Including all relevant metadata for filtering and retrieval
+
+5. **Duplicate Prevention**
+   - Tracking ingestion status for each company and resource
+   - Persisting status to JSON files to support incremental updates
+   - URL-based deduplication to prevent redundant content
+
+#### Implementation Details
+
+The `data_ingestion.py` tool will:
+
+1. Load company information from the updated `constants.py` file
+2. Check which companies/resources have already been indexed
+3. Process unindexed companies in batches
+4. For each company:
+   - Crawl all resources listed in their profile
+   - Extract relevant content
+   - Generate chunks appropriate for semantic search
+   - Create embeddings
+   - Store in Supabase with company metadata
+   - Mark as indexed to prevent future duplication
+5. Process PDF reports similarly, with specialized chunking for structured documents
+6. Save indexing status after processing to support incremental updates
+
+### User Assessment Process
+
+The user assessment process is a critical component for personalizing recommendations. It follows these steps:
+
+#### 1. Initial User Type Identification
+
+Users are presented with a simple questionnaire to identify their background:
+
 ```
+Which best describes your current situation?
+- [ ] Military veteran or transitioning service member
+- [ ] International professional with foreign credentials
+- [ ] Student (vocational/community college/university)
+- [ ] Career changer from another industry
+- [ ] Current clean energy professional seeking advancement
+- [ ] Massachusetts resident from an Environmental Justice community
+```
+
+#### 2. Targeted Follow-up Questions
+
+Based on the user type, 2-3 targeted questions are presented:
+
+**For Veterans:**
+- How recently did you transition from military service?
+- What was your primary military occupational specialty (MOS)?
+- What clean energy sector are you most interested in?
+
+**For International Professionals:**
+- In which country did you obtain your credentials?
+- What is your professional field of expertise?
+- Have you had your credentials evaluated in the US?
+
+**For Students:**
+- What type of educational institution are you attending?
+- What is your field of study?
+- When do you expect to complete your program?
+
+**For Career Changers:**
+- What industry are you transitioning from?
+- What skills from your current role do you believe are transferable?
+- Are you currently employed?
+
+#### 3. Resume Collection
+
+Users are prompted to:
+- Upload their resume (PDF, DOCX, or TXT format)
+- Or paste the text of their resume directly
+- Optionally provide LinkedIn profile URL for additional information
+
+#### 4. Profile Creation
+
+The system:
+1. Parses the resume to extract key information
+2. Combines resume data with questionnaire responses
+3. Creates a comprehensive user profile stored in Supabase
+4. Identifies skill sets, experience level, and background
+5. For veterans, translates military skills to civilian equivalents
+
+#### 5. Personalized Recommendations
+
+Based on the user profile, the system provides:
+- **Job Recommendations**: From our partner companies matching their skills and interests
+- **Skill Gap Analysis**: Identifying skills needed for desired roles
+- **Educational Pathways**: Courses, certifications, or programs to close skill gaps
+- **Career Transition Guidance**: Personalized roadmaps based on their background
+- **Company Connections**: Introducing companies with relevant opportunities
 
 ## System Architecture
 
@@ -384,16 +707,6 @@ To start developing:
 
 ## Deployment
 The application is designed for deployment on Vercel with API functions connecting to Supabase.
-
-## Implementation Plan
-- **Phase 1**: Core memory system and user authentication
-- **Phase 2**: Resume analysis and job matching
-- **Phase 3**: Military skills translation and international credential evaluation
-- **Phase 4**: Gateway Cities personalization and EJ communities integration
-- **Phase 5**: Metrics tracking and system monitoring
-- **Phase 6**: Polish UI/UX and performance optimization
-
-The implementation provides a robust solution for veterans transitioning to civilian careers, international professionals with overseas credentials, and residents of Environmental Justice communities, all within the context of Massachusetts' clean energy economy.
 
 ## Recent Updates
 
@@ -516,83 +829,7 @@ export default function ChatInterface() {
 }
 ```
 
-## Contributing
-
-Please read [CONTRIBUTING.md](./CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests.
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](./LICENSE) file for details.
-
-## Profile Enrichment
-
-The profile enrichment feature uses natural language processing and web search to enhance user profiles with relevant skills based on their education, experience, and professional background. This helps improve job matching and provides more personalized job recommendations.
-
-### Key Features
-
-- **Skill Extraction**: Automatically extracts technical, transferable, and soft skills from user profiles.
-- **Web Search Integration**: Uses the Serper API to search for additional information about the user's background.
-- **Verification Interface**: Users can review and verify extracted skills before they're added to their profiles.
-- **Privacy-Focused**: Only searches for information from trusted sources within the ecosystem.
-
-### Setup Requirements
-
-1. Add your Serper API key to the `.env` file:
-   ```
-   SERPER_API_KEY=your_serper_api_key
-   ```
-
-2. Run the Supabase migration to add the required schema changes:
-   ```
-   npx supabase db push
-   ```
-
-## Enhanced Job Search
-
-The enhanced job search feature leverages user profile data and enrichment information to provide more relevant job matches and personalized recommendations.
-
-### Key Features
-
-- **Profile-Based Matching**: Uses enriched user profiles to find relevant job opportunities.
-- **Skill Matching**: Identifies jobs that match the user's technical, transferable, and soft skills.
-- **Recommendations**: Provides job recommendations based on the user's profile and interests.
-- **Member Company Focus**: Prioritizes jobs from member companies within the climate economy ecosystem.
-
-### Usage
-
-1. Access the enhanced job search at `/jobs/enhanced-search`.
-2. For best results, complete the profile enrichment process first.
-3. Use the search filters to refine results by sector, skills, location, and more.
-
-## Metrics Dashboard
-
-The metrics dashboard provides comprehensive analytics on user engagement, profile enrichment, and job search activity within the Climate Economy Ecosystem.
-
-### Key Features
-
-- **Real-time Metrics**: Displays up-to-date statistics on user activity and engagement.
-- **Profile Enrichment Insights**: Tracks profile enrichment metrics, including skills verification rates and distribution.
-- **Job Search Analytics**: Monitors search patterns, recommendation effectiveness, and user interactions.
-- **Time-based Filtering**: View metrics for different time periods (7 days, 30 days, or 90 days).
-- **Chart Visualizations**: Visualizes trends and patterns with interactive charts and graphs.
-
-### Components
-
-The metrics system consists of:
-
-- **Frontend Tracking**: Client-side metrics collection in UI components.
-- **Backend Processing**: Server-side aggregation and analysis.
-- **Admin Dashboard**: Visualization interface for administrators.
-- **Python Metrics Service**: Advanced metrics processing and storage.
-
-### Usage
-
-1. Access the metrics dashboard at `/admin/metrics`.
-2. Use the time range selectors to adjust the data timeframe.
-3. Navigate between different metric tabs (Overview, Profile Enrichment, Job Search).
-4. Export or share insights as needed for reporting.
-
-### Reinforcement Learning from Human Feedback (RLHF)
+## Reinforcement Learning from Human Feedback (RLHF)
 
 The Climate Economy Ecosystem includes a comprehensive RLHF system that captures user feedback at multiple levels:
 
@@ -660,3 +897,157 @@ The RLHF system is fully integrated with the LangGraph agent framework:
 - Structured validators ensure data quality for training
 - Agent behavior is optimized based on user preferences
 - Complex workflows receive targeted improvement based on step-level feedback
+
+#### RLHF Workflow Diagrams
+
+##### Feedback Collection Flow
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant UI as Chat Interface
+    participant API as Feedback API
+    participant DB as Supabase Database
+    participant Metrics as Metrics Service
+
+    User->>UI: Interacts with AI response
+    UI->>UI: Displays feedback UI components
+    User->>UI: Provides feedback (thumbs up/down, rating)
+    UI->>API: POST /api/assistant/feedback
+    API->>DB: Store feedback data
+    API->>Metrics: Track feedback event
+    API->>DB: Update user satisfaction score
+    API-->>UI: Confirmation response
+    UI-->>User: Display feedback confirmation
+```
+
+##### Training Pipeline Flow
+
+```mermaid
+flowchart TD
+    A[Collect User Feedback] --> B[Store in Supabase]
+    B --> C[Process Feedback Data]
+    C --> D{Training Type}
+    D -->|Reward Model| E[Train Reward Model]
+    D -->|PPO| F[Fine-tune Using PPO]
+    E --> G[Evaluate Reward Model]
+    F --> H[Evaluate Policy Model]
+    G --> I[Deploy Reward Model]
+    H --> J[Deploy Policy Model]
+    I --> K[Monitor Performance]
+    J --> K
+    K --> L{Performance Improved?}
+    L -->|Yes| M[Continue Using Model]
+    L -->|No| N[Rollback to Previous Model]
+    M --> A
+    N --> A
+```
+
+#### RLHF Implementation Code
+
+Here's a key excerpt from the reward model implementation:
+
+```python
+class ClimateRewardModel:
+    def __init__(self, model_name="distilbert-base-uncased", model_path=None):
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        
+        if model_path and os.path.exists(model_path):
+            self.model = AutoModelForSequenceClassification.from_pretrained(model_path)
+        else:
+            self.model = AutoModelForSequenceClassification.from_pretrained(
+                model_name, 
+                num_labels=1  # Regression task for reward score
+            )
+        
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.model.to(self.device)
+    
+    def compute_reward(self, query, response):
+        """Predict reward score for a query-response pair"""
+        inputs = self.tokenizer(
+            query, response, 
+            return_tensors="pt", 
+            truncation=True, 
+            padding=True, 
+            max_length=512
+        ).to(self.device)
+        
+        with torch.no_grad():
+            outputs = self.model(**inputs)
+            reward = outputs.logits.item()
+        
+        return reward
+    
+    def train(self, feedback_data, output_dir="data/reward_model", epochs=3):
+        """Train the reward model on human feedback data"""
+        # Implementation details...
+```
+
+## Profile Enrichment
+
+The profile enrichment feature uses natural language processing and web search to enhance user profiles with relevant skills based on their education, experience, and professional background. This helps improve job matching and provides more personalized job recommendations.
+
+### Key Features
+
+- **Skill Extraction**: Automatically extracts technical, transferable, and soft skills from user profiles.
+- **Web Search Integration**: Uses the Serper API to search for additional information about the user's background.
+- **Verification Interface**: Users can review and verify extracted skills before they're added to their profiles.
+- **Privacy-Focused**: Only searches for information from trusted sources within the ecosystem.
+
+### Setup Requirements
+
+1. Add your Serper API key to the `.env` file:
+   ```
+   SERPER_API_KEY=your_serper_api_key
+   ```
+
+2. Run the Supabase migration to add the required schema changes:
+   ```
+   npx supabase db push
+   ```
+
+## Enhanced Job Search
+
+The enhanced job search feature leverages user profile data and enrichment information to provide more relevant job matches and personalized recommendations.
+
+### Key Features
+
+- **Profile-Based Matching**: Uses enriched user profiles to find relevant job opportunities.
+- **Skill Matching**: Identifies jobs that match the user's technical, transferable, and soft skills.
+- **Recommendations**: Provides job recommendations based on the user's profile and interests.
+- **Member Company Focus**: Prioritizes jobs from member companies within the climate economy ecosystem.
+
+### Usage
+
+1. Access the enhanced job search at `/jobs/enhanced-search`.
+2. For best results, complete the profile enrichment process first.
+3. Use the search filters to refine results by sector, skills, location, and more.
+
+## Metrics Dashboard
+
+The metrics dashboard provides comprehensive analytics on user engagement, profile enrichment, and job search activity within the Climate Economy Ecosystem.
+
+### Key Features
+
+- **Real-time Metrics**: Displays up-to-date statistics on user activity and engagement.
+- **Profile Enrichment Insights**: Tracks profile enrichment metrics, including skills verification rates and distribution.
+- **Job Search Analytics**: Monitors search patterns, recommendation effectiveness, and user interactions.
+- **Time-based Filtering**: View metrics for different time periods (7 days, 30 days, or 90 days).
+- **Chart Visualizations**: Visualizes trends and patterns with interactive charts and graphs.
+
+### Components
+
+The metrics system consists of:
+
+- **Frontend Tracking**: Client-side metrics collection in UI components.
+- **Backend Processing**: Server-side aggregation and analysis.
+- **Admin Dashboard**: Visualization interface for administrators.
+- **Python Metrics Service**: Advanced metrics processing and storage.
+
+### Usage
+
+1. Access the metrics dashboard at `/admin/metrics`.
+2. Use the time range selectors to adjust the data timeframe.
+3. Navigate between different metric tabs (Overview, Profile Enrichment, Job Search).
+4. Export or share insights as needed for reporting. 
