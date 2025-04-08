@@ -1,12 +1,18 @@
 // Navigation items for authenticated users
 const authenticatedNavItems = [
-  { 
-    label: 'Dashboard', 
-    href: '/dashboard', 
-    icon: 'dashboard' 
+  {
+    label: 'Dashboard',
+    href: '/dashboard',
+    icon: 'dashboard'
   },
-  { 
-    label: 'Profile', 
+  {
+    label: 'Chat',
+    href: '/chat',
+    icon: 'message-circle',
+    highlight: true
+  },
+  {
+    label: 'Profile',
     href: '/profile',
     icon: 'profile',
     subItems: [
@@ -15,8 +21,8 @@ const authenticatedNavItems = [
       { label: 'Enhance Profile', href: '/profile/enrich' }
     ]
   },
-  { 
-    label: 'Jobs', 
+  {
+    label: 'Jobs',
     href: '/jobs',
     icon: 'briefcase',
     subItems: [
@@ -26,4 +32,4 @@ const authenticatedNavItems = [
     ]
   },
   // ... other existing nav items ...
-]; 
+];

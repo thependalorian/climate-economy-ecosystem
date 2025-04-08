@@ -39,11 +39,11 @@ const ReasoningStep = ({ content, stepId, chatId }) => {
 
 /**
  * StreamingResponse Component
- * 
+ *
  * Displays a streaming chat response with token-by-token updates
  * and proper formatting of markdown content.
  */
-export default function StreamingResponse({ 
+export default function StreamingResponse({
   query,
   onComplete,
   className,
@@ -59,13 +59,13 @@ export default function StreamingResponse({
   const [currentStepId, setCurrentStepId] = useState(null);
   const [currentStepContent, setCurrentStepContent] = useState('');
   const [chatId, setChatId] = useState(null);
-  
+
   const { data: session } = useSession();
   const abortControllerRef = useRef(null);
-  
+
   useEffect(() => {
     if (!query) return;
-    
+
     const fetchStreamingResponse = async () => {
       setIsStreaming(true);
       setStreamedContent('');
@@ -76,12 +76,12 @@ export default function StreamingResponse({
       setCurrentStepId(null);
       setCurrentStepContent('');
       setChatId(null);
-      
+
       try {
         // Create abort controller for the fetch request
         abortControllerRef.current = new AbortController();
         const { signal } = abortControllerRef.current;
-        
+
         // Make the streaming request
         const response = await fetch('/api/chat/stream', {
           method: 'POST',
@@ -95,99 +95,97 @@ export default function StreamingResponse({
           }),
           signal
         });
-        
+
         if (!response.ok) {
           throw new Error(`Server error: ${response.status}`);
         }
-        
+
         // Get the response reader for streaming
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let accumulatedContent = '';
-        
+
         while (true) {
           const { value, done } = await reader.read();
-          
+
           if (done) {
             break;
           }
-          
+
           // Decode the chunk and update state
           const chunk = decoder.decode(value, { stream: true });
-          
-          try {
-            // Check if this is step metadata
-            const stepMetadata = processStepMetadata(chunk);
-            
-            if (stepMetadata.isStepMetadata) {
-              // Handle step metadata
-              if (stepMetadata.data.type === 'step_start') {
-                // Start a new reasoning step
-                setCurrentStepId(stepMetadata.data.step_id);
-                setCurrentStepContent('');
-                // Store chat ID if available
-                if (stepMetadata.data.chat_id && !chatId) {
-                  setChatId(stepMetadata.data.chat_id);
-                }
-              } else if (stepMetadata.data.type === 'step_end' && currentStepId) {
-                // End current reasoning step and add it to steps array
-                setSteps(prevSteps => [
-                  ...prevSteps, 
-                  { 
-                    id: currentStepId, 
-                    content: currentStepContent,
-                    order: prevSteps.length
+
+          // Process each line separately (in case multiple JSON objects are in one chunk)
+          const lines = chunk.split('\n').filter(line => line.trim());
+
+          for (const line of lines) {
+            try {
+              // Check if this is step metadata
+              const stepMetadata = processStepMetadata(line);
+
+              if (stepMetadata.isStepMetadata) {
+                // Handle step metadata
+                if (stepMetadata.data.type === 'step_start') {
+                  // Start a new reasoning step
+                  setCurrentStepId(stepMetadata.data.step_id);
+                  setCurrentStepContent('');
+                  // Store chat ID if available
+                  if (stepMetadata.data.chat_id && !chatId) {
+                    setChatId(stepMetadata.data.chat_id);
                   }
-                ]);
-                setCurrentStepId(null);
-                setCurrentStepContent('');
+                } else if (stepMetadata.data.type === 'step_end' && currentStepId) {
+                  // End current reasoning step and add it to steps array
+                  setSteps(prevSteps => [
+                    ...prevSteps,
+                    {
+                      id: currentStepId,
+                      content: currentStepContent,
+                      order: prevSteps.length
+                    }
+                  ]);
+                  setCurrentStepId(null);
+                  setCurrentStepContent('');
+                }
+                continue; // Skip regular content processing for metadata
               }
-              continue; // Skip regular content processing for metadata
-            }
-            
-            // Parse the chunk as JSON if it contains a complete object
-            if (chunk.trim().startsWith('{') && chunk.trim().endsWith('}')) {
-              const parsedChunk = JSON.parse(chunk);
-              
-              if (parsedChunk.sources) {
-                setSources(parsedChunk.sources);
+
+              // Parse the line as JSON
+              const parsedData = JSON.parse(line);
+
+              if (parsedData.sources) {
+                setSources(parsedData.sources);
               }
-              
-              if (parsedChunk.chat_id && !chatId) {
-                setChatId(parsedChunk.chat_id);
+
+              if (parsedData.chat_id && !chatId) {
+                setChatId(parsedData.chat_id);
               }
-              
-              if (parsedChunk.text) {
-                accumulatedContent += parsedChunk.text;
+
+              if (parsedData.text) {
+                accumulatedContent += parsedData.text;
                 setStreamedContent(accumulatedContent);
-                
+
                 // Add to current step content if within a step
                 if (currentStepId) {
-                  setCurrentStepContent(prev => prev + parsedChunk.text);
+                  setCurrentStepContent(prev => prev + parsedData.text);
                 }
               }
-            } else {
-              // Handle plain text streaming or partial JSON
-              accumulatedContent += chunk;
-              setStreamedContent(accumulatedContent);
-              
-              // Add to current step content if within a step
-              if (currentStepId) {
-                setCurrentStepContent(prev => prev + chunk);
+            } catch (e) {
+              // If JSON parsing fails, just append the line
+              console.warn('Error parsing streaming chunk:', e);
+              // Only append if it looks like text content, not a partial JSON object
+              if (!line.includes('{') && !line.includes('}')) {
+                accumulatedContent += line;
+                setStreamedContent(accumulatedContent);
+
+                // Add to current step content if within a step
+                if (currentStepId) {
+                  setCurrentStepContent(prev => prev + line);
+                }
               }
-            }
-          } catch (e) {
-            // If JSON parsing fails, just append the chunk
-            accumulatedContent += chunk;
-            setStreamedContent(accumulatedContent);
-            
-            // Add to current step content if within a step
-            if (currentStepId) {
-              setCurrentStepContent(prev => prev + chunk);
             }
           }
         }
-        
+
         // Call the completion callback with the full response
         if (onComplete) {
           onComplete(accumulatedContent, sources);
@@ -197,7 +195,7 @@ export default function StreamingResponse({
         if (e.name !== 'AbortError') {
           console.error('Error streaming response:', e);
           setError(e.message);
-          
+
           // Call the completion callback with the error
           if (onComplete) {
             onComplete('', [], e);
@@ -207,9 +205,9 @@ export default function StreamingResponse({
         setIsStreaming(false);
       }
     };
-    
+
     fetchStreamingResponse();
-    
+
     // Cleanup function to abort the request if component unmounts
     return () => {
       if (abortControllerRef.current) {
@@ -217,14 +215,14 @@ export default function StreamingResponse({
       }
     };
   }, [query, session, onComplete, modelOverride]);
-  
+
   const stopStreaming = () => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       setIsStreaming(false);
     }
   };
-  
+
   if (error) {
     return (
       <div className={`text-red-500 p-4 rounded-md bg-red-50 ${className}`}>
@@ -233,7 +231,7 @@ export default function StreamingResponse({
       </div>
     );
   }
-  
+
   return (
     <div className={className}>
       {streamedContent.length > 0 ? (
@@ -243,11 +241,11 @@ export default function StreamingResponse({
             <div className="reasoning-steps-container mb-4">
               <h3 className="text-sm font-medium mb-2">Reasoning Steps:</h3>
               {steps.map((step) => (
-                <ReasoningStep 
-                  key={step.id} 
-                  content={step.content} 
-                  stepId={step.id} 
-                  chatId={chatId} 
+                <ReasoningStep
+                  key={step.id}
+                  content={step.content}
+                  stepId={step.id}
+                  chatId={chatId}
                 />
               ))}
             </div>
@@ -259,12 +257,12 @@ export default function StreamingResponse({
               </ReactMarkdown>
             </div>
           )}
-          
+
           {isStreaming && (
             <div className="flex items-center mt-2">
               <Spinner className="h-4 w-4 animate-spin mr-2" />
               <span className="text-xs text-muted-foreground">Generating response...</span>
-              <button 
+              <button
                 onClick={stopStreaming}
                 className="ml-2 text-xs text-primary hover:underline"
               >
@@ -272,7 +270,7 @@ export default function StreamingResponse({
               </button>
             </div>
           )}
-          
+
           {showSources && sources.length > 0 && !isStreaming && (
             <div className="mt-4 text-sm border-t pt-2">
               <p className="font-medium mb-1">Sources:</p>
@@ -281,9 +279,9 @@ export default function StreamingResponse({
                   <li key={index} className="flex items-start text-xs">
                     <span className="mr-1">•</span>
                     {source.url ? (
-                      <a 
-                        href={source.url} 
-                        target="_blank" 
+                      <a
+                        href={source.url}
+                        target="_blank"
                         rel="noopener noreferrer"
                         className="text-primary hover:underline break-all"
                       >
@@ -308,4 +306,4 @@ export default function StreamingResponse({
       ) : null}
     </div>
   );
-} 
+}
