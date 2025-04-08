@@ -1,96 +1,110 @@
 'use client';
 
-import { useState, useEffect, createContext, useContext } from 'react';
+import { useSession, signIn, signOut } from 'next-auth/react';
+import { useCallback } from 'react';
+import { tracingService } from '@/lib/tracing/langsmith-client';
 
 /**
- * Authentication Context and Hook
- * Provides user authentication state and methods throughout the application
- * Location: /hooks/useAuth.js
+ * useAuth Hook
+ * 
+ * A custom React hook that provides authentication functionality
+ * using NextAuth.js. Includes tracing for monitoring and debugging.
+ * 
+ * @returns {Object} Object containing auth state and methods
  */
-
-// Create auth context
-const AuthContext = createContext();
-
-// Auth provider component
-export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    // In a real app, this would check for an existing session
-    const checkAuth = async () => {
-      try {
-        // Simulate API call delay
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        // Check localStorage for saved auth
-        const savedUser = localStorage.getItem('user');
-        if (savedUser) {
-          setUser(JSON.parse(savedUser));
-        }
-      } catch (error) {
-        console.error('Auth check failed:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    checkAuth();
-  }, []);
-
-  // Login function
-  const login = async (email, password) => {
-    setIsLoading(true);
-    try {
-      // In a real app, this would call an API endpoint
-      // Simulating successful login for demonstration
-      const mockUser = {
-        id: '123',
-        name: 'Demo User',
-        email,
-        role: email.includes('admin') ? 'admin' : 'user',
-      };
-      
-      // Save to state and localStorage
-      setUser(mockUser);
-      localStorage.setItem('user', JSON.stringify(mockUser));
-      return { success: true };
-    } catch (error) {
-      console.error('Login failed:', error);
-      return { success: false, error: error.message };
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Logout function
-  const logout = () => {
-    setUser(null);
-    localStorage.removeItem('user');
-  };
-
-  // Check if user is admin
-  const isAdmin = user?.role === 'admin';
-
-  // Create the context value
-  const value = {
-    user,
-    isLoading,
-    isAdmin,
-    login,
-    logout,
-  };
-
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
-}
-
-// Custom hook to use auth context
 export function useAuth() {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
+  const { data: session, status } = useSession();
+  
+  /**
+   * Login function
+   * 
+   * @param {string} provider - The authentication provider to use
+   * @returns {Promise} Promise that resolves when login is complete
+   */
+  const login = useCallback(async (provider = 'google') => {
+    try {
+      // Track login attempt
+      const runId = tracingService.createRunId();
+      tracingService.logLlmCall(
+        'auth',
+        'login_attempt',
+        provider,
+        runId,
+        { auth_action: 'login_attempt' }
+      );
+      
+      // Perform login
+      await signIn(provider);
+      
+      // Track successful login
+      tracingService.logLlmCall(
+        'auth',
+        'login_success',
+        provider,
+        runId,
+        { auth_action: 'login_success' }
+      );
+    } catch (error) {
+      console.error('Login error:', error);
+      
+      // Track login error
+      tracingService.logLlmCall(
+        'auth',
+        'login_error',
+        error.message,
+        null,
+        { auth_action: 'login_error' }
+      );
+      
+      throw error;
+    }
+  }, []);
+  
+  /**
+   * Logout function
+   * 
+   * @returns {Promise} Promise that resolves when logout is complete
+   */
+  const logout = useCallback(async () => {
+    try {
+      // Track logout
+      tracingService.logLlmCall(
+        'auth',
+        'logout',
+        '',
+        null,
+        { auth_action: 'logout' }
+      );
+      
+      // Perform logout
+      await signOut();
+    } catch (error) {
+      console.error('Logout error:', error);
+      throw error;
+    }
+  }, []);
+  
+  return {
+    session,
+    status,
+    isAuthenticated: status === 'authenticated',
+    isLoading: status === 'loading',
+    user: session?.user,
+    login,
+    logout
+  };
 }
 
-export default useAuth; 
+/**
+ * AuthProvider component
+ * 
+ * This is a placeholder component for backward compatibility.
+ * In a NextAuth.js app, you should use SessionProvider from next-auth/react.
+ * 
+ * @param {Object} props - Component props
+ * @param {React.ReactNode} props.children - Child components
+ * @returns {React.ReactNode} The wrapped children
+ */
+export function AuthProvider({ children }) {
+  return children;
+}

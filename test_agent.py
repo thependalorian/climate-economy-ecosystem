@@ -32,10 +32,7 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 client = OpenAI(api_key=openai.api_key)
 
 # Import tools
-try:
-    from lib.memory.mem0_service import MemoryService, ClimateMemoryEntry
-except ImportError:
-    from lib.memory.mock_mem0_service import MockMemoryService as MemoryService, ClimateMemoryEntry
+from lib.memory.memory_service import MemoryService, ClimateMemoryEntry, MemoryServiceError
 
 try:
     from tools.military_skill_translator import translate_military_to_civilian_skills

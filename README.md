@@ -460,42 +460,152 @@ CREATE TABLE IF NOT EXISTS public.feedback_analytics (
 
 ## Technical Implementation
 
-### Memory Service
+### Consolidated Services
+
+The platform uses a set of consolidated services for memory, caching, and tracing:
+
+#### Memory Service
+
+The Memory Service provides persistent storage for conversations, user profiles, and other data using Mem0:
+
 ```python
-# climate_economy_ecosystem/lib/memory/mem0_service.py
+from lib.memory.memory_service import MemoryService, ClimateMemoryEntry, MemoryServiceError
 
-from mem0 import Memory
-from pydantic import BaseModel, Field
-from typing import List, Dict, Optional, Any, Union
-import os
-from datetime import datetime
-import openai
+# Initialize memory service
+memory_service = MemoryService()
 
-class ClimateMemoryEntry(BaseModel):
-    """Memory entry model for climate economy assistant"""
-    content: str
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-    user_id: str
-    timestamp: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
-    category: str = "report"  # report, job, training, conversation, resume
-    source: str = "manual"
-    relevance_score: Optional[float] = None
+try:
+    # Store a memory
+    memory_entry = ClimateMemoryEntry(
+        content="Solar installation jobs are growing rapidly in Massachusetts.",
+        user_id="user123",
+        category="job_market"
+    )
+    memory_id = await memory_service.add_memory(memory_entry)
 
-class UserProfile(BaseModel):
-    """User profile with resume data and preferences"""
-    user_id: str
-    name: Optional[str] = None
-    email: Optional[str] = None
-    location: Optional[str] = None
-    is_ej_community: bool = False
-    gateway_city: Optional[str] = None
-    is_veteran: bool = False
-    military_background: Optional[Dict[str, Any]] = None
-    international_credentials: Optional[List[Dict[str, Any]]] = None
-    resume_data: Optional[Dict[str, Any]] = None
-    skills: List[Dict[str, Any]] = Field(default_factory=list)
-    interests: List[str] = Field(default_factory=list)
-    preferences: Dict[str, Any] = Field(default_factory=dict)
+    # Retrieve memories
+    memories = await memory_service.search_memories(
+        query="solar jobs",
+        user_id="user123",
+        limit=5
+    )
+
+    # Get user profile
+    profile = await memory_service.get_user_profile("user123")
+
+except MemoryServiceError as e:
+    # Handle error appropriately
+    logger.error(f"Memory service error: {str(e)}")
+    # Inform the user or retry with different parameters
+```
+
+#### Redis Service
+
+The Redis Service provides caching and pub/sub capabilities:
+
+```python
+from lib.redis.redis_service import RedisService, RedisServiceError
+
+# Initialize Redis service
+redis_service = RedisService()
+
+try:
+    # Cache data
+    await redis_service.set("user:123:recommendations", recommendations, 3600)
+
+    # Get cached data
+    cached_recommendations = await redis_service.get("user:123:recommendations")
+
+    # Use cached function pattern
+    results = await redis_service.cached(
+        key="search:solar:boston",
+        func=lambda: search_jobs("solar", "boston"),
+        expiry_seconds=1800
+    )
+
+except RedisServiceError as e:
+    # Handle error appropriately
+    logger.error(f"Redis service error: {str(e)}")
+    # Fall back to direct function call
+    results = await search_jobs("solar", "boston")
+```
+
+#### LangSmith Tracing Service
+
+The LangSmith Tracing Service provides monitoring and debugging for LLM calls:
+
+```python
+from lib.tracing.langsmith_service import TracingService, TracingServiceError
+
+# Initialize tracing service
+tracing_service = TracingService()
+
+try:
+    # Create a trace
+    run_id = tracing_service.create_run_id()
+    with tracing_service.trace(
+        name="get_job_recommendations",
+        run_id=run_id,
+        inputs={"user_id": "user123", "query": "solar installer"}
+    ) as run:
+        # Perform operations
+        recommendations = get_job_recommendations("user123", "solar installer")
+
+        # End trace with outputs
+        run.end(outputs={"recommendations": recommendations})
+
+    # Log an LLM call
+    tracing_service.log_llm_call(
+        model="gpt-4",
+        prompt="Recommend solar jobs in Boston",
+        completion="Here are some solar jobs in Boston...",
+        run_id=run_id
+    )
+
+except TracingServiceError as e:
+    # Handle error appropriately
+    logger.error(f"Tracing service error: {str(e)}")
+    # Continue without tracing
+```
+
+#### Base Tool Class
+
+All tools inherit from a common base class that provides standardized error handling:
+
+```python
+from tools.base_tool import BaseTool, ToolError, ToolConfigurationError, ToolExecutionError
+
+class EJGeospatialTool(BaseTool):
+    """Tool for geospatial analysis of EJ communities"""
+
+    def requires_supabase(self) -> bool:
+        """This tool requires Supabase for data storage"""
+        return True
+
+    async def initialize(self):
+        """Initialize the tool"""
+        await super().initialize()
+        # Tool-specific initialization
+
+    async def run(self, action: str, **kwargs) -> Dict[str, Any]:
+        """Run the tool with the specified action"""
+        self._check_availability()
+
+        try:
+            if action == "geocode":
+                # Implementation
+                pass
+            elif action == "is_ej_community":
+                # Implementation
+                pass
+            else:
+                raise ToolExecutionError(f"Unknown action: {action}")
+        except ToolError:
+            # Re-raise tool errors
+            raise
+        except Exception as e:
+            # Wrap other exceptions
+            raise ToolExecutionError(f"Error executing {action}: {str(e)}")
 ```
 
 ### Agent Workflow
@@ -803,6 +913,10 @@ cd climate-economy-ecosystem
 # Create .env file with your configuration
 cp .env.example .env
 
+# Edit .env file to change default passwords
+# IMPORTANT: Always change default passwords in production environments
+vim .env  # or use your preferred editor
+
 # Generate secure keys for local development
 npm run generate-keys
 
@@ -988,158 +1102,95 @@ export default function ChatInterface() {
 
 ## Reinforcement Learning from Human Feedback (RLHF)
 
-The Climate Economy Ecosystem includes a comprehensive RLHF system that captures user feedback at multiple levels:
+The Climate Economy Ecosystem includes a comprehensive RLHF system that captures user feedback at multiple levels and uses it to continuously improve all specialized agents.
 
-- Message-level feedback (thumbs up/down on entire responses)
-- Step-level feedback (targeted feedback on specific reasoning steps)
-- Numeric rating scale (1-5 star ratings)
+### Overview
+
+Our RLHF implementation enables:
+
+- **Multi-level feedback collection**: Message-level, step-level, and explicit ratings
+- **Agent-specific optimization**: Each specialized agent has its own reward model
+- **Continuous improvement**: Automated pipeline for regular model updates
+- **Human-in-the-loop**: Integration with LangGraph for human review
 
 This feedback data is used to:
-1. Train a reward model that predicts user satisfaction
-2. Fine-tune the language model using Proximal Policy Optimization (PPO)
+1. Train reward models that predict user satisfaction
+2. Fine-tune language models using Proximal Policy Optimization (PPO)
 3. Continuously improve response quality based on user preferences
 
-#### System Components
+### System Architecture
 
-The RLHF implementation includes:
-- Database schemas for capturing structured feedback (chat_feedback table)
-- Client-side components for collecting user ratings (StepFeedback and MessageFeedback)
-- API endpoints for storing and retrieving feedback (/api/assistant/feedback and /api/metrics/chat-feedback)
-- Metrics service integration for tracking feedback patterns
-- RLHF analytics dashboard for monitoring model performance
-- Training scripts for model optimization using the TRL library
-- GitHub workflow for automated retraining on a weekly schedule
+The RLHF implementation follows a modular architecture:
 
-#### Feedback Collection Process
+```
+lib/rlhf/
+├── models.py          # Reward models
+├── training.py        # PPO training
+├── pipeline.py        # Continuous improvement
+└── orchestrator.py    # Orchestration
+```
+
+### Key Components
+
+- **Reward Models**: Base and agent-specific models that predict user satisfaction
+- **PPO Training**: Implementation of Proximal Policy Optimization for fine-tuning
+- **Continuous Improvement Pipeline**: Automated process for collecting feedback and improving models
+- **RLHF Orchestrator**: Coordinates the entire RLHF process across all agent types
+
+### Database Schema
+
+The RLHF system uses the following database tables:
+
+- `chat_feedback`: Stores feedback on messages and reasoning steps
+- `reasoning_steps`: Stores individual steps in the reasoning process
+- `chat_messages`: Stores chat messages with agent type information
+- `chats`: Stores chat sessions
+
+See the [database schema documentation](supabase/README.md) for more details.
+
+### Feedback Collection Process
 
 The system collects feedback through multiple channels:
-1. **Message-level feedback**: Users can rate entire AI responses using thumbs up/down buttons
-2. **Step-level feedback**: Users can provide granular feedback on specific reasoning steps
-3. **Explicit ratings**: Users can provide numeric scores (1-5) for more detailed feedback
-4. **Implicit signals**: The system tracks engagement metrics like time spent reading responses
 
-#### Training Pipeline
+1. **Message-level feedback**: Users can rate entire AI responses
+2. **Step-level feedback**: Users can provide granular feedback on specific reasoning steps
+3. **Explicit ratings**: Users can provide numeric scores (1-5) for detailed feedback
+4. **Human-in-the-loop**: Agents can request human review of their responses
+
+### Training Pipeline
 
 The RLHF training process follows these steps:
-1. **Data preprocessing**: Clean and prepare feedback data for training
-2. **Reward model training**: Train a model to predict user satisfaction scores
-3. **PPO fine-tuning**: Optimize the language model using reinforcement learning
-4. **Evaluation**: Test model performance against baseline on various metrics
-5. **Deployment**: Update the production model with improved weights
 
-#### Monitoring and Analytics
+1. **Feedback collection**: Gather feedback from users on agent responses
+2. **Reward model training**: Train models to predict user satisfaction
+3. **PPO fine-tuning**: Optimize language models using reinforcement learning
+4. **Evaluation**: Test model performance against baselines
+5. **Deployment**: Update production models with improved weights
 
-The RLHF system includes a dedicated metrics dashboard that provides:
-- Feedback trends over time (daily, weekly, monthly)
-- Distribution of feedback scores across different user segments
-- Top areas for improvement based on negative feedback
-- Model performance metrics before and after training
-- A/B testing results comparing different model versions
+### Command-Line Interface
 
-To train the model with RLHF:
+The RLHF system includes a command-line interface for training and evaluation:
+
 ```bash
-# Run the training script
-./scripts/train_model.sh
+# Train a specific agent
+python tools/run_rlhf.py --agent-type climate_education
 
-# Options: reward, ppo, or both
-./scripts/train_model.sh reward  # Train only reward model
-./scripts/train_model.sh ppo     # Fine-tune using PPO
-./scripts/train_model.sh both    # Run the complete pipeline
+# Train all agents
+python tools/run_rlhf.py --all-agents
+
+# Evaluate agents
+python tools/run_rlhf.py --evaluate
 ```
 
-#### Integration with Graph Agents
+### Integration with LangGraph
 
-The RLHF system is fully integrated with the LangGraph agent framework:
-- Feedback is collected at each step of agent reasoning
-- Structured validators ensure data quality for training
-- Agent behavior is optimized based on user preferences
-- Complex workflows receive targeted improvement based on step-level feedback
+The RLHF system integrates with LangGraph's Functional API:
 
-#### RLHF Workflow Diagrams
+- Human-in-the-loop capabilities using the `interrupt` function
+- Checkpointing for resuming workflows after human feedback
+- Streaming responses with feedback collection
 
-##### Feedback Collection Flow
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant UI as Chat Interface
-    participant API as Feedback API
-    participant DB as Supabase Database
-    participant Metrics as Metrics Service
-
-    User->>UI: Interacts with AI response
-    UI->>UI: Displays feedback UI components
-    User->>UI: Provides feedback (thumbs up/down, rating)
-    UI->>API: POST /api/assistant/feedback
-    API->>DB: Store feedback data
-    API->>Metrics: Track feedback event
-    API->>DB: Update user satisfaction score
-    API-->>UI: Confirmation response
-    UI-->>User: Display feedback confirmation
-```
-
-##### Training Pipeline Flow
-
-```mermaid
-flowchart TD
-    A[Collect User Feedback] --> B[Store in Supabase]
-    B --> C[Process Feedback Data]
-    C --> D{Training Type}
-    D -->|Reward Model| E[Train Reward Model]
-    D -->|PPO| F[Fine-tune Using PPO]
-    E --> G[Evaluate Reward Model]
-    F --> H[Evaluate Policy Model]
-    G --> I[Deploy Reward Model]
-    H --> J[Deploy Policy Model]
-    I --> K[Monitor Performance]
-    J --> K
-    K --> L{Performance Improved?}
-    L -->|Yes| M[Continue Using Model]
-    L -->|No| N[Rollback to Previous Model]
-    M --> A
-    N --> A
-```
-
-#### RLHF Implementation Code
-
-Here's a key excerpt from the reward model implementation:
-
-```python
-class ClimateRewardModel:
-    def __init__(self, model_name="distilbert-base-uncased", model_path=None):
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-
-        if model_path and os.path.exists(model_path):
-            self.model = AutoModelForSequenceClassification.from_pretrained(model_path)
-        else:
-            self.model = AutoModelForSequenceClassification.from_pretrained(
-                model_name,
-                num_labels=1  # Regression task for reward score
-            )
-
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.model.to(self.device)
-
-    def compute_reward(self, query, response):
-        """Predict reward score for a query-response pair"""
-        inputs = self.tokenizer(
-            query, response,
-            return_tensors="pt",
-            truncation=True,
-            padding=True,
-            max_length=512
-        ).to(self.device)
-
-        with torch.no_grad():
-            outputs = self.model(**inputs)
-            reward = outputs.logits.item()
-
-        return reward
-
-    def train(self, feedback_data, output_dir="data/reward_model", epochs=3):
-        """Train the reward model on human feedback data"""
-        # Implementation details...
-```
+For more details, see the [RLHF implementation documentation](docs/rlhf_implementation.md).
 
 ## Profile Enrichment
 

@@ -2,6 +2,7 @@
 
 import { AuthProvider } from '../hooks/useAuth';
 import { ToastProvider } from '../components/ui/toast';
+import { SessionProvider } from 'next-auth/react';
 
 /**
  * Client Providers
@@ -10,10 +11,12 @@ import { ToastProvider } from '../components/ui/toast';
  */
 export default function Providers({ children }) {
   return (
-    <AuthProvider>
-      <ToastProvider>
-        {children}
-      </ToastProvider>
-    </AuthProvider>
+    <SessionProvider>
+      <AuthProvider>
+        <ToastProvider>
+          {children}
+        </ToastProvider>
+      </AuthProvider>
+    </SessionProvider>
   );
-} 
+}

@@ -176,6 +176,7 @@ When sharing the application with colleagues, be careful with sensitive informat
 1. **Never share your `.env` file directly**
    - Each developer should create their own `.env` file using the `.env.example` template
    - They should run `npm run generate-keys` to create their own secure keys
+   - Always change default passwords (like `POSTGRES_PASSWORD`) to strong, unique passwords
 
 2. **Use different secrets for shared environments**
    - Development, staging, and production environments should use different secrets

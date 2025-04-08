@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { FileText, MessageSquare, Search, Activity, ArrowRight, Send, Info, AlertCircle, ThumbsUp, ThumbsDown, Trash2 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import Link from 'next/link';
-import { useToast } from '@/components/ui/use-toast';
+import { useToast } from '@/components/ui/toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import MainLayout from '@/components/layout/MainLayout';
 
@@ -184,11 +184,7 @@ export default function ChatAssistant() {
         isError: true
       }]);
 
-      toast({
-        title: "Error",
-        description: "Could not process your message. Please try again.",
-        variant: "destructive",
-      });
+      toast("Could not process your message. Please try again.", "error");
     } finally {
       setIsTyping(false);
     }
@@ -213,17 +209,10 @@ export default function ChatAssistant() {
 
       setClearDialogOpen(false);
 
-      toast({
-        title: "Conversation cleared",
-        description: "Your conversation history has been cleared.",
-      });
+      toast("Your conversation history has been cleared.", "success");
     } catch (error) {
       console.error('Error clearing conversation:', error);
-      toast({
-        title: "Error",
-        description: "Failed to clear conversation. Please try again.",
-        variant: "destructive",
-      });
+      toast("Failed to clear conversation. Please try again.", "error");
     }
   };
 
@@ -252,13 +241,12 @@ export default function ChatAssistant() {
         })
       });
 
-      toast({
-        title: "Thank you for your feedback!",
-        description: isPositive ?
-          "We're glad this was helpful." :
-          "We'll work to improve our responses.",
-        variant: isPositive ? "default" : "secondary",
-      });
+      toast(
+        isPositive ?
+          "Thank you for your feedback! We're glad this was helpful." :
+          "Thank you for your feedback! We'll work to improve our responses.",
+        isPositive ? "success" : "info"
+      );
 
     } catch (error) {
       console.error('Error submitting feedback:', error);

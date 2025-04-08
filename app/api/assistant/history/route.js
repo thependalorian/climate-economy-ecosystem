@@ -1,40 +1,80 @@
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
-import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
-import { getMemory } from '@/lib/memory';
+import { getServerSession } from 'next-auth/next';
+import { authOptions } from '@/app/api/auth/[...nextauth]/route';
+import { MemoryService } from '@/lib/memory/memory-service';
+import { RedisCache } from '@/lib/redis/redis-client';
 
-/**
- * API Route for Chat History
- * Retrieves the user's conversation history from memory
- * Location: /app/api/assistant/history/route.js
- */
-export async function GET(request) {
+export async function GET(req) {
   try {
-    const supabase = createRouteHandlerClient({ cookies });
-    
-    // Get user if authenticated
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-    if (userError) throw userError;
-    
-    if (!user) {
-      return NextResponse.json(
-        { error: 'Authentication required' },
-        { status: 401 }
-      );
+    // Check authentication
+    const session = await getServerSession(authOptions);
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     
-    // Get user's conversation history from memory
-    const messages = await getMemory(user.id);
+    // Get user ID
+    const userId = session.user.id;
     
-    return NextResponse.json({
-      messages
-    });
+    // Initialize services
+    const memoryService = new MemoryService();
+    const redisCache = new RedisCache();
     
+    // Try to get cached history
+    try {
+      const cacheKey = `history:${userId}`;
+      const cachedHistory = await redisCache.get(cacheKey);
+      if (cachedHistory) {
+        return NextResponse.json({ 
+          history: cachedHistory,
+          cached: true 
+        });
+      }
+    } catch (error) {
+      console.error('Cache error:', error);
+      // Continue without caching
+    }
+    
+    try {
+      // Get chat history from memory service
+      const history = await memoryService.search_memories(
+        "",  // Empty query to get all memories
+        userId,
+        20,  // Limit to 20 most recent
+        ["chat"]  // Only get chat memories
+      );
+      
+      // Format history
+      const formattedHistory = history.map(item => ({
+        id: item.id,
+        query: item.metadata?.query || "",
+        response: item.content,
+        timestamp: item.metadata?.timestamp || new Date().toISOString()
+      }));
+      
+      // Sort by timestamp (newest first)
+      formattedHistory.sort((a, b) => b.timestamp - a.timestamp);
+      
+      // Try to cache the history
+      try {
+        await redisCache.set(`history:${userId}`, formattedHistory, 300);  // Cache for 5 minutes
+      } catch (error) {
+        console.error('Cache error:', error);
+        // Continue without caching
+      }
+      
+      return NextResponse.json({ history: formattedHistory });
+    } catch (error) {
+      console.error('Error getting chat history:', error);
+      return NextResponse.json(
+        { error: 'Error getting chat history', message: error.message },
+        { status: 500 }
+      );
+    }
   } catch (error) {
-    console.error('Error fetching chat history:', error);
+    console.error('Unhandled error:', error);
     return NextResponse.json(
-      { error: 'Failed to fetch chat history' },
+      { error: 'Unhandled error', message: error.message },
       { status: 500 }
     );
   }
-} 
+}

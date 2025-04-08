@@ -2,6 +2,8 @@
 
 This document provides visual representations of the RLHF system workflow.
 
+For the full implementation details, see the [RLHF implementation documentation](rlhf_implementation.md) and the code in the `lib/rlhf/` directory.
+
 ## Feedback Collection Flow
 
 ```mermaid
@@ -113,4 +115,4 @@ graph TD
     D --> E[Deploy Models]
     E --> F[Monitor Performance]
     F --> A
-``` 
+```

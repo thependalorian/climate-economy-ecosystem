@@ -1,93 +1,97 @@
-import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs'
-import { NextResponse } from 'next/server'
-import { metrics_service } from './lib/monitoring/metrics_service'
+import { NextResponse } from 'next/server';
+import { getToken } from 'next-auth/jwt';
+import { tracingService } from '@/lib/tracing/langsmith-client';
 
-/**
- * NextAuth Middleware
- * Handles authentication checks and redirects
- * Location: /middleware.js
- */
-
-export async function middleware(req) {
-  const res = NextResponse.next()
-  const supabase = createMiddlewareClient({ req, res })
-
-  // Refresh session if expired
-  const { data: { session } } = await supabase.auth.getSession()
-  const isLoggedIn = !!session
-  const isAdmin = session?.user?.user_metadata?.role === 'admin'
-  const { pathname } = req.nextUrl
-
-  // Track API performance for metrics endpoints
-  if (pathname.startsWith('/api/')) {
-    const startTime = Date.now()
+export async function middleware(request) {
+  // Create a unique run ID for tracing
+  const runId = tracingService.createRunId();
+  
+  // Create a tracer
+  const tracer = tracingService.createTracer(runId, 'middleware');
+  
+  try {
+    // Start span
+    const span = tracer.startSpan({
+      name: 'middleware_request',
+      inputs: { 
+        path: request.nextUrl.pathname,
+        method: request.method
+      },
+      runType: 'chain'
+    });
     
-    // Add a response hook to track performance after the response is processed
-    const originalRes = res.Response
-    
-    res.Response = function(...args) {
-      const result = originalRes.apply(this, args)
-      const statusCode = result.status
+    // Check if the request is for an API route
+    if (request.nextUrl.pathname.startsWith('/api/')) {
+      // For API routes, check authentication
+      const token = await getToken({ req: request });
       
-      // Track API performance metrics
-      try {
-        const duration = Date.now() - startTime
-        const userId = session?.user?.id
+      // If no token and not a public API route, redirect to login
+      if (!token && !isPublicApiRoute(request.nextUrl.pathname)) {
+        span.end({
+          outputs: { 
+            result: 'unauthorized',
+            redirect: '/api/auth/signin'
+          }
+        });
         
-        metrics_service.track_api_performance(
-          pathname,
-          duration,
-          statusCode,
-          userId,
-          Object.fromEntries(req.nextUrl.searchParams)
-        )
-      } catch (error) {
-        console.error('Error tracking API performance:', error)
+        tracer.end();
+        
+        return NextResponse.json(
+          { error: 'Unauthorized' },
+          { status: 401 }
+        );
       }
-      
-      return result
     }
+    
+    // End span with success
+    span.end({
+      outputs: { 
+        result: 'success'
+      }
+    });
+    
+    tracer.end();
+    
+    // Continue with the request
+    return NextResponse.next();
+  } catch (error) {
+    console.error('Middleware error:', error);
+    
+    // Record error in trace
+    try {
+      const errorSpan = tracer.startSpan({
+        name: 'middleware_error',
+        inputs: { error: error.message },
+        runType: 'chain'
+      });
+      
+      errorSpan.end();
+      tracer.end();
+    } catch (tracingError) {
+      console.error('Error recording tracing:', tracingError);
+    }
+    
+    // Continue with the request despite the error
+    return NextResponse.next();
   }
-
-  // Redirect from login/register if already logged in
-  if (isLoggedIn && (pathname === '/login' || pathname === '/register')) {
-    return NextResponse.redirect(new URL('/dashboard', req.url))
-  }
-
-  // Protected routes
-  const protectedRoutes = [
-    '/dashboard',
-    '/profile',
-    '/jobs/saved',
-    '/training/saved'
-  ]
-  const isProtectedRoute = protectedRoutes.some(route => pathname.startsWith(route))
-
-  if (!isLoggedIn && isProtectedRoute) {
-    return NextResponse.redirect(
-      new URL(`/login?callbackUrl=${encodeURIComponent(pathname)}`, req.url)
-    )
-  }
-
-  // Admin routes
-  const adminRoutes = ['/admin']
-  const isAdminRoute = adminRoutes.some(route => pathname.startsWith(route))
-  if (isLoggedIn && isAdminRoute && !isAdmin) {
-    return NextResponse.redirect(new URL('/', req.url))
-  }
-
-  return res
 }
 
+// Define which API routes are public
+function isPublicApiRoute(pathname) {
+  const publicRoutes = [
+    '/api/auth',
+    '/api/health',
+    '/api/public'
+  ];
+  
+  return publicRoutes.some(route => pathname.startsWith(route));
+}
+
+// Configure which routes use this middleware
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except for the ones starting with:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * - public folder
-     */
-    '/((?!_next/static|_next/image|favicon.ico|public/).*)',
-  ],
-} 
+    '/api/:path*',
+    '/dashboard/:path*',
+    '/profile/:path*'
+  ]
+};

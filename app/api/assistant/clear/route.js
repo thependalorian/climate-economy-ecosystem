@@ -1,40 +1,65 @@
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
-import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
-import { clearMemory } from '@/lib/memory';
+import { getServerSession } from 'next-auth/next';
+import { authOptions } from '@/app/api/auth/[...nextauth]/route';
+import { MemoryService } from '@/lib/memory/memory-service';
+import { RedisCache } from '@/lib/redis/redis-client';
 
-/**
- * API Route for Clearing Chat History
- * Removes all conversation history for the user
- * Location: /app/api/assistant/clear/route.js
- */
-export async function POST(request) {
+export async function POST(req) {
   try {
-    const supabase = createRouteHandlerClient({ cookies });
-    
-    // Get user if authenticated
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-    if (userError) throw userError;
-    
-    if (!user) {
-      return NextResponse.json(
-        { error: 'Authentication required' },
-        { status: 401 }
-      );
+    // Check authentication
+    const session = await getServerSession(authOptions);
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     
-    // Clear user's memory
-    await clearMemory(user.id);
+    // Get user ID
+    const userId = session.user.id;
     
-    return NextResponse.json({
-      message: 'Conversation history cleared successfully'
-    });
+    // Initialize services
+    const memoryService = new MemoryService();
+    const redisCache = new RedisCache();
     
+    try {
+      // Get chat history from memory service
+      const history = await memoryService.search_memories(
+        "",  // Empty query to get all memories
+        userId,
+        100,  // Get up to 100 memories
+        ["chat"]  // Only get chat memories
+      );
+      
+      // Delete each memory
+      let deletedCount = 0;
+      for (const item of history) {
+        await memoryService.delete_memory(item.id);
+        deletedCount++;
+      }
+      
+      // Clear cache
+      try {
+        await redisCache.invalidatePattern(`*:${userId}:*`);
+        await redisCache.delete(`history:${userId}`);
+      } catch (error) {
+        console.error('Cache error:', error);
+        // Continue without caching
+      }
+      
+      return NextResponse.json({ 
+        success: true, 
+        message: `Cleared ${deletedCount} chat messages` 
+      });
+    } catch (error) {
+      console.error('Error clearing chat history:', error);
+      return NextResponse.json(
+        { error: 'Error clearing chat history', message: error.message },
+        { status: 500 }
+      );
+    }
   } catch (error) {
-    console.error('Error clearing chat history:', error);
+    console.error('Unhandled error:', error);
     return NextResponse.json(
-      { error: 'Failed to clear chat history' },
+      { error: 'Unhandled error', message: error.message },
       { status: 500 }
     );
   }
-} 
+}

@@ -23,12 +23,8 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 load_dotenv()
 
 # Import Memory Service components
-try:
-    from lib.memory.mem0_service import MemoryService, ClimateMemoryEntry, UserProfile
-    print("Using real mem0 service")
-except ImportError:
-    from lib.memory.mock_mem0_service import MockMemoryService as MemoryService, ClimateMemoryEntry, UserProfile
-    print("Using mock memory service")
+from lib.memory.memory_service import MemoryService, ClimateMemoryEntry, UserProfile, MemoryServiceError
+print("Using consolidated memory service")
 
 async def test_memory_operations():
     """Test basic memory operations"""
