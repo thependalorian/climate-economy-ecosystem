@@ -4,9 +4,9 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
-import { ChevronLeft, ChevronRight, Users, GraduationCap, Globe, MapPin, Briefcase, ArrowRight, Check } from 'lucide-react';
 
-// Importing onboarding components
+// Importing UI components
+import { Button } from '@/components/ui/Button';
 import StepProgress from '@/components/Onboarding/StepProgress';
 import Question from '@/components/Onboarding/Question';
 import SelectableCard from '@/components/Onboarding/SelectableCard';
@@ -47,7 +47,7 @@ export default function OnboardingPage() {
             <SelectableCard
               selected={formData.persona === 'veteran'}
               onClick={() => handlePersonaSelect('veteran')}
-              icon={<Users size={24} className="text-spring-green" />}
+              icon={<span aria-hidden="true" className="text-spring-green text-2xl">👥</span>}
               title="Military Veteran"
               description="Transitioning from military service to civilian clean energy career"
             />
@@ -55,7 +55,7 @@ export default function OnboardingPage() {
             <SelectableCard
               selected={formData.persona === 'international'}
               onClick={() => handlePersonaSelect('international')}
-              icon={<Globe size={24} className="text-spring-green" />}
+              icon={<span aria-hidden="true" className="text-spring-green text-2xl">🌎</span>}
               title="International Professional"
               description="Professional with international background or training"
             />
@@ -63,7 +63,7 @@ export default function OnboardingPage() {
             <SelectableCard
               selected={formData.persona === 'student'}
               onClick={() => handlePersonaSelect('student')}
-              icon={<GraduationCap size={24} className="text-spring-green" />}
+              icon={<span aria-hidden="true" className="text-spring-green text-2xl">🎓</span>}
               title="Student"
               description="Current student at vocational, community college, or university"
             />
@@ -71,7 +71,7 @@ export default function OnboardingPage() {
             <SelectableCard
               selected={formData.persona === 'ej'}
               onClick={() => handlePersonaSelect('ej')}
-              icon={<MapPin size={24} className="text-spring-green" />}
+              icon={<span aria-hidden="true" className="text-spring-green text-2xl">📍</span>}
               title="Environmental Justice Community"
               description="Resident of an Environmental Justice community"
             />
@@ -79,7 +79,7 @@ export default function OnboardingPage() {
             <SelectableCard
               selected={formData.persona === 'reentry'}
               onClick={() => handlePersonaSelect('reentry')}
-              icon={<Briefcase size={24} className="text-spring-green" />}
+              icon={<span aria-hidden="true" className="text-spring-green text-2xl">💼</span>}
               title="Workforce Reentry"
               description="Returning to the workforce after a career gap"
             />
@@ -87,7 +87,7 @@ export default function OnboardingPage() {
             <SelectableCard
               selected={formData.persona === 'other'}
               onClick={() => handlePersonaSelect('other')}
-              icon={<Check size={24} className="text-spring-green" />}
+              icon={<span aria-hidden="true" className="text-spring-green text-2xl">✓</span>}
               title="Other"
               description="My situation is different from the options above"
             />
@@ -201,7 +201,7 @@ export default function OnboardingPage() {
                   
                   {formData.interests.includes(interest.name) && (
                     <div className="absolute top-2 right-2 bg-spring-green rounded-full p-1">
-                      <Check size={16} className="text-midnight-forest" />
+                      <span aria-hidden="true" className="text-midnight-forest">✓</span>
                     </div>
                   )}
                 </div>
@@ -465,25 +465,22 @@ export default function OnboardingPage() {
         </div>
         
         <div className="flex justify-between">
-          <button
+          <Button
             onClick={handlePrevious}
-            className="btn btn-outline border-gray-300 hover:bg-gray-100 hover:border-gray-400"
+            variant="outline"
+            className="border-gray-300 hover:bg-gray-100 hover:border-gray-400"
           >
-            <ChevronLeft size={16} className="mr-2" />
             {currentStep === 1 ? 'Back to Home' : 'Previous'}
-          </button>
+          </Button>
           
-          <button
+          <Button
             onClick={handleNext}
             disabled={!isCurrentStepComplete()}
-            className={`btn btn-primary group ${!isCurrentStepComplete() ? 'opacity-60 cursor-not-allowed' : ''}`}
+            variant="primary"
+            className={!isCurrentStepComplete() ? 'opacity-60 cursor-not-allowed' : ''}
           >
-            {currentStep === totalSteps ? (
-              <>Finish & Go to Dashboard</>
-            ) : (
-              <>Next <ChevronRight size={16} className="ml-2 group-hover:translate-x-1 transition-transform" /></>
-            )}
-          </button>
+            {currentStep === totalSteps ? 'Finish & Go to Dashboard' : 'Next'}
+          </Button>
         </div>
       </div>
     </OnboardingLayout>

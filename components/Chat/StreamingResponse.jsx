@@ -2,10 +2,10 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useSession } from 'next-auth/react';
-import { Spinner } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import StepFeedback from './StepFeedback';
+import { Spinner } from '../../lib/icons-shim';
 
 // Add processing for step metadata
 const processStepMetadata = (chunk) => {

@@ -1,5 +1,6 @@
 import NextAuth from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
+import GoogleProvider from 'next-auth/providers/google';
 import supabase from '@/lib/supabase-client';
 
 /**
@@ -53,7 +54,20 @@ export const authConfig = {
           return null;
         }
       }
-    })
+    }),
+    GoogleProvider({
+      clientId: process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      profile(profile) {
+        return {
+          id: profile.sub,
+          name: profile.name,
+          email: profile.email,
+          image: profile.picture,
+          role: 'user',
+        };
+      },
+    }),
   ],
   session: {
     strategy: 'jwt',
@@ -61,7 +75,7 @@ export const authConfig = {
   },
   callbacks: {
     // Include user data in the JWT token
-    async jwt({ token, user }) {
+    async jwt({ token, user, account }) {
       if (user) {
         token.id = user.id;
         token.email = user.email;
@@ -69,6 +83,36 @@ export const authConfig = {
         token.role = user.role;
         token.profile = user.profile;
       }
+      
+      // If sign in with OAuth
+      if (account && account.provider === 'google') {
+        // Check if user exists or create a new profile
+        const { data: existingUser } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('email', token.email)
+          .single();
+        
+        if (!existingUser) {
+          // Create new profile
+          const { data: newProfile } = await supabase
+            .from('profiles')
+            .insert({
+              id: token.sub,
+              email: token.email,
+              full_name: token.name,
+              avatar_url: token.picture,
+              role: 'user',
+            })
+            .select()
+            .single();
+            
+          token.profile = newProfile || {};
+        } else {
+          token.profile = existingUser;
+        }
+      }
+      
       return token;
     },
     // Make user data available in the session
@@ -82,7 +126,7 @@ export const authConfig = {
     }
   },
   pages: {
-    signIn: '/login',
+    signIn: '/auth/signin',
     signOut: '/',
     error: '/error',
   },

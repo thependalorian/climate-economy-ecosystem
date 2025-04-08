@@ -1,98 +1,71 @@
 #!/usr/bin/env python3
-"""
-Data Ingestion Tool for Massachusetts Climate Economy Assistant
-
-This script crawls and indexes content from company resources, climate reports,
-and other educational content to build a knowledge base for the Climate Economy
-Ecosystem Assistant.
-
-Usage:
-    python data_ingestion.py [--companies COMPANY1,COMPANY2,...] [--reports] [--force]
-
-Options:
-    --companies  Only process specified companies (comma-separated)
-    --reports    Only process PDF reports
-    --force      Force reindexing even if already indexed
-"""
 
 import os
 import sys
-import json
 import asyncio
 import logging
-import argparse
-from typing import Dict, List, Any, Optional, Set, Tuple
-from dataclasses import dataclass
-from datetime import datetime, timezone
-from urllib.parse import urlparse
-import traceback
+import json
 import time
-
-import httpx
-from bs4 import BeautifulSoup
+import re
+import requests
+from pathlib import Path
+from typing import Dict, List, Optional, Any
+from datetime import datetime, timezone
 from dotenv import load_dotenv
-from supabase import create_client, Client
-import openai
-from tenacity import retry, stop_after_attempt, wait_exponential
 from PyPDF2 import PdfReader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+import markdown
+from openai import OpenAI
 
-# Add parent directory to sys.path to allow imports
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from constants import (
-    ACT_COMPANIES, 
-    CLIMATE_REPORT_RESOURCES, 
-    REQUIRED_REPORTS,
-    is_company_indexed,
-    mark_company_as_indexed,
-    get_unindexed_companies,
-    save_company_index_status,
-    load_company_index_status
-)
-
-# Load environment variables
-load_dotenv()
+# Add parent directory to path so we can import from the root constants.py
+sys.path.append(str(Path(__file__).parent.parent))
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(module)s - %(funcName)s - %(message)s',
+    format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler('climate_data_ingestion.log')
+        logging.FileHandler('data_ingestion.log')
     ]
 )
 logger = logging.getLogger(__name__)
 
-# Initialize Supabase client
-supabase_url = os.getenv("SUPABASE_URL")
-supabase_key = os.getenv("SUPABASE_ANON_KEY")
+# Load environment variables
+load_dotenv()
 
-if not supabase_url or not supabase_key:
-    logger.error("SUPABASE_URL and SUPABASE_ANON_KEY environment variables are required")
-    sys.exit(1)
+# Supabase configuration
+SUPABASE_URL = os.getenv('NEXT_PUBLIC_SUPABASE_URL')
+SUPABASE_KEY = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
 
+# Initialize base headers for Supabase requests
+SUPABASE_HEADERS = {
+    'apikey': SUPABASE_KEY,
+    'Authorization': f'Bearer {SUPABASE_KEY}',
+    'Content-Type': 'application/json'
+}
+
+# Initialize OpenAI client if needed for embeddings
+openai_client = OpenAI()
+
+# Try to import constants, but provide a fallback if it fails
 try:
-    supabase: Client = create_client(supabase_url, supabase_key)
-    logger.info("Successfully initialized Supabase client")
-except Exception as e:
-    logger.error(f"Failed to initialize Supabase client: {str(e)}")
-    sys.exit(1)
-
-# Initialize OpenAI client
-openai_client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-@dataclass
-class IngestionConfig:
-    """Configuration for the data ingestion tool."""
-    chunk_size: int = 1000
-    chunk_overlap: int = 200
-    max_concurrent_tasks: int = 5
-    rate_limit_delay: float = 0.5  # seconds between requests
-    supabase_rate_limit: float = 0.2  # seconds between Supabase calls
-    page_timeout: int = 30  # seconds
-    user_agent: str = "Massachusetts Climate Economy Assistant Indexer Bot (Contact: support@macleantech.org)"
-    docs_dir: str = "docs"  # Updated to use docs directory
+    from constants import (
+        CLIMATE_REPORT_RESOURCES,
+        REQUIRED_REPORTS,
+        ACT_COMPANIES,
+    )
+except ImportError:
+    logger.warning("Could not import constants, using fallbacks")
+    CLIMATE_REPORT_RESOURCES = []
+    REQUIRED_REPORTS = []
+    # Define a fallback for ACT_COMPANIES
+    ACT_COMPANIES = [
+        {"name": "Solaris Energy", "sector": "Solar", "location": "Boston", "website": "https://solarisenergy.com"},
+        {"name": "WindTech Solutions", "sector": "Wind", "location": "Worcester", "website": "https://windtechsolutions.com"},
+        {"name": "EcoGrid Systems", "sector": "Energy Efficiency", "location": "Cambridge", "website": "https://ecogridsystems.com"},
+        {"name": "GreenBuild Contractors", "sector": "Green Building", "location": "Springfield", "website": "https://greenbuildcontractors.com"},
+        {"name": "BatteryStore Inc.", "sector": "Battery Storage", "location": "Boston", "website": "https://batterystoreinc.com"}
+    ]
 
 class RateLimiter:
     """Simple rate limiter for API calls."""
@@ -112,146 +85,16 @@ class RateLimiter:
             self.last_call_time = time.time()
 
 class ClimateDataIngester:
-    """Indexes climate economy content from various sources."""
+    def __init__(self):
+        # Initialize rate limiter for Supabase calls
+        self.supabase_rate_limiter = RateLimiter(2.0)  # 2 calls per second
+        
+        # Configuration for processing
+        self.chunk_size = 1000
+        self.chunk_overlap = 200
     
-    def __init__(self, config: Optional[IngestionConfig] = None):
-        """Initialize the ingester with configuration."""
-        self.config = config or IngestionConfig()
-        self.processed_urls: Set[str] = set()
-        
-        # Initialize rate limiters
-        self.api_rate_limiter = RateLimiter(1.0/self.config.rate_limit_delay)
-        self.supabase_rate_limiter = RateLimiter(1.0/self.config.supabase_rate_limit)
-        
-        # Create reports directory if it doesn't exist
-        os.makedirs(self.config.docs_dir, exist_ok=True)
-        
-        # For graceful shutdown
-        self.should_exit = False
-        
-        # Load tracking data
-        load_company_index_status()
-        
-    def handle_shutdown_signal(self, sig=None, frame=None):
-        """Handle shutdown signal gracefully."""
-        logger.info("Shutdown signal received, cleaning up...")
-        self.should_exit = True
-        logger.info("Saving current progress...")
-        save_company_index_status()
-
-    def smart_chunker(self, text: str) -> List[str]:
-        """Split text into chunks intelligently, trying to maintain context."""
-        # Enforce maximum content size limit to prevent memory issues
-        MAX_CONTENT_SIZE = 500000  # ~500KB max content size
-        if len(text) > MAX_CONTENT_SIZE:
-            logger.warning(f"Content too large ({len(text)} chars), truncating to {MAX_CONTENT_SIZE} chars")
-            text = text[:MAX_CONTENT_SIZE]
-        
-        # Use LangChain's RecursiveCharacterTextSplitter for smart chunking
-        text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=self.config.chunk_size,
-            chunk_overlap=self.config.chunk_overlap,
-            separators=["\n\n", "\n", ". ", " ", ""]
-        )
-        
-        chunks = text_splitter.split_text(text)
-        
-        # Enforce maximum number of chunks to prevent excessive processing
-        MAX_CHUNKS = 50
-        if len(chunks) > MAX_CHUNKS:
-            logger.warning(f"Too many chunks ({len(chunks)}), limiting to {MAX_CHUNKS}")
-            chunks = chunks[:MAX_CHUNKS]
-        
-        return chunks
-
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10)
-    )
-    async def store_document(self, source_type: str, text: str, metadata: Dict[str, Any]) -> bool:
-        """Store a document in Supabase with retries."""
-        try:
-            # Wait for rate limiter before proceeding
-            await self.supabase_rate_limiter.wait()
-            
-            # Validate required fields
-            if not text or len(text.strip()) < 50:  # Skip very short content
-                logger.warning(f"Content too short for {metadata.get('url', 'unknown')}, skipping")
-                return False
-                
-            if not metadata.get("url") and not metadata.get("file_path"):
-                logger.warning("Missing required 'url' or 'file_path' field in metadata, skipping")
-                return False
-                
-            if not source_type:
-                logger.warning("Missing required 'source_type', skipping")
-                return False
-            
-            logger.info(f"Generating embedding for content from {metadata.get('url', metadata.get('file_path', 'unknown'))}")
-            # Generate embedding using OpenAI
-            embedding_list = await self.get_embedding(text)
-            
-            # Check if embedding is valid
-            if not embedding_list or not isinstance(embedding_list, list):
-                logger.warning(f"Invalid embedding generated for {metadata.get('url', 'unknown')}")
-                return False
-            
-            # Parse URL for domain and path if available
-            if metadata.get("url"):
-                parsed_url = urlparse(metadata.get("url", ""))
-                domain = parsed_url.netloc
-                path = parsed_url.path
-            else:
-                domain = "local"
-                path = metadata.get("file_path", "")
-            
-            # Create document with metadata and embedding
-            document = {
-                "content": text,
-                "metadata": json.dumps(metadata),  # Convert metadata to JSON string
-                "embedding": embedding_list,
-                "source_type": source_type,
-                "url": metadata.get("url", ""),
-                "title": metadata.get("title", ""),
-                "chunk_index": metadata.get("chunk_index", 0),
-                "total_chunks": metadata.get("total_chunks", 1),
-                "crawl_time": metadata.get("crawl_time", datetime.now(timezone.utc).isoformat()),
-                "company": metadata.get("company", ""),
-                "sector": metadata.get("sector", ""),
-                "domain": domain,
-                "path": path
-            }
-            
-            logger.info(f"Storing document in Supabase: Source={metadata.get('url', metadata.get('file_path'))}, Title={metadata.get('title')}, Chunk={metadata.get('chunk_index')+1}/{metadata.get('total_chunks')}")
-            
-            try:
-                # Insert into Supabase with better error handling
-                await self.supabase_rate_limiter.wait()  # Wait again before actual API call
-                result = supabase.table("climate_memories").insert(document).execute()
-                if not result.data:
-                    raise Exception("No data returned from Supabase insert")
-                
-                # Log success with more details
-                logger.info(f"Successfully stored document: Source={metadata.get('url', metadata.get('file_path'))}, Title={metadata.get('title')}, Chunk={metadata.get('chunk_index')+1}/{metadata.get('total_chunks')}")
-                return True
-                
-            except Exception as e:
-                logger.error(f"Supabase insert error for {metadata.get('url', metadata.get('file_path', 'unknown'))}: {str(e)}")
-                if hasattr(e, 'response') and hasattr(e.response, 'text'):
-                    logger.error(f"Response: {e.response.text}")
-                return False
-            
-        except Exception as e:
-            logger.error(f"Error storing document from {metadata.get('url', metadata.get('file_path', 'unknown'))}: {str(e)}")
-            logger.error(traceback.format_exc())
-            return False
-
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10)
-    )
     async def get_embedding(self, text: str) -> Optional[List[float]]:
-        """Generate embedding for text using OpenAI with retries."""
+        """Generate embedding for text using OpenAI."""
         try:
             # Use OpenAI's embedding model
             response = openai_client.embeddings.create(
@@ -264,408 +107,626 @@ class ClimateDataIngester:
         except Exception as e:
             logger.error(f"Error generating embedding with OpenAI: {str(e)}")
             return None
-
-    async def process_webpage(self, url: str, company_name: str, metadata: Dict[str, Any] = None) -> bool:
-        """Process a single webpage for a company."""
-        if url in self.processed_urls:
-            logger.info(f"Skipping already processed URL: {url}")
-            return False
+    
+    def smart_chunker(self, text: str) -> List[str]:
+        """Split text into chunks intelligently, preserving context."""
+        # Remove excessive whitespace
+        text = re.sub(r'\n{3,}', '\n\n', text)
+        text = re.sub(r'\s+', ' ', text)
+        
+        chunks = []
+        current_chunk = []
+        current_length = 0
+        
+        # Split text into sentences
+        segments = re.split(r'([.!?]\s+|\n{2,})', text)
+        
+        for i in range(0, len(segments), 2):
+            segment = segments[i]
+            # Add the punctuation/newline back if it exists
+            if i + 1 < len(segments):
+                segment += segments[i + 1]
+                
+            # If adding this segment would exceed chunk size, start new chunk
+            if current_length + len(segment) > self.chunk_size and current_chunk:
+                chunks.append(''.join(current_chunk).strip())
+                
+                # Start new chunk with overlap from previous
+                overlap_start = max(0, len(''.join(current_chunk)) - self.chunk_overlap)
+                current_chunk = [''.join(current_chunk)[overlap_start:]]
+                current_length = len(current_chunk[0])
             
+            current_chunk.append(segment)
+            current_length += len(segment)
+        
+        # Add the last chunk if not empty
+        if current_chunk:
+            chunks.append(''.join(current_chunk).strip())
+        
+        # Limit chunks for processing sanity
+        MAX_CHUNKS = 50
+        if len(chunks) > MAX_CHUNKS:
+            logger.warning(f"Too many chunks ({len(chunks)}), limiting to {MAX_CHUNKS}")
+            chunks = chunks[:MAX_CHUNKS]
+            
+        return chunks
+    
+    async def memory_exists(self, source: str, chunk_index: Optional[int] = None) -> bool:
+        """Check if a memory already exists in the database."""
         try:
-            # Wait for rate limiter
-            await self.api_rate_limiter.wait()
+            await self.supabase_rate_limiter.wait()
             
-            # Fetch webpage content with reasonable timeout
-            logger.info(f"Fetching content from {url}")
-            async with httpx.AsyncClient(timeout=self.config.page_timeout, follow_redirects=True) as client:
-                response = await client.get(url, headers={
-                    'User-Agent': self.config.user_agent
-                })
-                
-                if response.status_code != 200:
-                    logger.warning(f"Failed to fetch {url}: HTTP {response.status_code}")
-                    self.processed_urls.add(url)
-                    return False
-            
-            # Parse HTML content
-            content = response.text
-            soup = BeautifulSoup(content, 'html.parser')
-            
-            # Extract main content area (remove navigation, footers, etc.)
-            main_content = soup.find('main') or soup.find('article') or soup.find('div', class_='content') or soup
-            
-            # Extract title
-            title_tag = soup.find('title')
-            title = title_tag.get_text(strip=True) if title_tag else url.split('/')[-1]
-            
-            # Get text content with structure preserved
-            text_content = self.extract_structured_content(main_content)
-            
-            if not text_content or len(text_content.strip()) < 100:
-                logger.warning(f"Content too short or empty from {url}, only {len(text_content) if text_content else 0} chars")
-                self.processed_urls.add(url)
-                return False
-            
-            logger.info(f"Successfully extracted content from {url}")
-            
-            # Create chunks with metadata
-            chunks = self.smart_chunker(text_content)
-            logger.info(f"Created {len(chunks)} chunks from {url}")
-            
-            # Prepare standard metadata
-            if metadata is None:
-                metadata = {}
-                
-            base_metadata = {
-                "url": url,
-                "company": company_name,
-                "title": title,
-                "crawl_time": datetime.now(timezone.utc).isoformat(),
-                **metadata
+            # Create a filter for the query
+            query_params = {
+                'source': source
             }
             
-            # Store each chunk
-            success_count = 0
-            for chunk_index, chunk in enumerate(chunks):
-                chunk_metadata = {
-                    **base_metadata,
-                    "chunk_index": chunk_index,
-                    "total_chunks": len(chunks),
-                }
+            # Add chunk index to filter if provided
+            if chunk_index is not None:
+                query_params['chunk_index'] = chunk_index
                 
-                success = await self.store_document(
-                    source_type="company_resource",
-                    text=chunk,
-                    metadata=chunk_metadata
-                )
-                
-                if success:
-                    success_count += 1
+            # Build the query URL
+            url = f"{SUPABASE_URL}/rest/v1/climate_memories"
             
-            # Mark as processed
-            self.processed_urls.add(url)
-            return success_count > 0
+            # Add the filter to only match memories with the same source and chunk index
+            filter_str = f"metadata->>'source'=eq.{source}"
+            if chunk_index is not None:
+                filter_str += f"&metadata->>'chunk_index'=eq.{chunk_index}"
+                
+            response = requests.get(
+                f"{url}?select=id&{filter_str}",
+                headers=SUPABASE_HEADERS
+            )
+            
+            if response.status_code == 200:
+                results = response.json()
+                return len(results) > 0
+                
+            return False
             
         except Exception as e:
-            logger.error(f"Error processing webpage {url}: {str(e)}")
-            logger.error(traceback.format_exc())
+            logger.warning(f"Error checking if memory exists: {str(e)}")
+            # Default to not existing to be safe
             return False
-
-    def extract_structured_content(self, element) -> str:
-        """Extract content while preserving structure (headings, lists, paragraphs)."""
-        if not element:
-            return ""
-        
-        # Dictionary to store the extracted content with structure preserved
-        content = []
-        
-        # Process all elements recursively
-        for child in element.find_all(recursive=False):
-            # Handle different HTML elements to preserve structure
-            if child.name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']:
-                # Convert HTML headings to markdown headings
-                level = int(child.name[1])
-                heading_text = child.get_text(strip=True)
-                content.append('\n' + '#' * level + ' ' + heading_text + '\n')
+    
+    async def store_memory(self, content: str, metadata: Dict = None) -> bool:
+        """Store a memory in the climate_memories table with embedding."""
+        try:
+            await self.supabase_rate_limiter.wait()
             
-            elif child.name == 'p':
-                # Handle paragraphs
-                para_text = child.get_text(strip=True)
-                if para_text:
-                    content.append(para_text + '\n\n')
+            # Skip if content is too short
+            if not content or len(content.strip()) < 50:
+                logger.warning(f"Content too short from {metadata.get('source', 'unknown')}, skipping")
+                return False
             
-            elif child.name in ['ul', 'ol']:
-                # Handle lists
-                list_items = []
-                for li in child.find_all('li', recursive=True):
-                    li_text = li.get_text(strip=True)
-                    prefix = '- ' if child.name == 'ul' else f"{len(list_items) + 1}. "
-                    list_items.append(f"{prefix}{li_text}")
-                
-                if list_items:
-                    content.append('\n' + '\n'.join(list_items) + '\n\n')
+            # Check if memory already exists
+            if metadata and 'source' in metadata:
+                chunk_index = metadata.get('chunk_index')
+                if await self.memory_exists(metadata['source'], chunk_index):
+                    logger.info(f"Memory from {metadata['source']} already exists, skipping")
+                    return True  # Consider it a success
             
-            elif child.name == 'pre' or child.name == 'code':
-                # Handle code blocks
-                code_text = child.get_text(strip=True)
-                if code_text:
-                    content.append('\n```\n' + code_text + '\n```\n\n')
-            
-            elif child.name == 'table':
-                # Handle tables (simplified)
-                content.append('\n[Table content omitted]\n\n')
-            
-            elif child.name in ['div', 'section', 'article', 'main']:
-                # Recursively process container elements
-                nested_content = self.extract_structured_content(child)
-                if nested_content:
-                    content.append(nested_content)
-            
-            elif child.name in ['a']:
-                # Handle links - add the text and the URL
-                link_text = child.get_text(strip=True)
-                link_url = child.get('href', '')
-                if link_text and link_url:
-                    if link_url.startswith('/') or link_url.startswith('./'):
-                        # Handle relative URLs
-                        pass  # We don't need to expand them for our purposes
-                    content.append(f"{link_text} ")
-            
-            elif child.name in ['span', 'strong', 'em', 'b', 'i']:
-                # Inline elements, just get the text
-                inline_text = child.get_text(strip=True)
-                if inline_text:
-                    content.append(inline_text + ' ')
-        
-        # If no structured content is found, fall back to simple text extraction
-        if not content and element.get_text(strip=True):
-            return element.get_text(separator='\n', strip=True)
-        
-        return '\n'.join(content)
-
-    async def process_company(self, company: Dict[str, Any]) -> Tuple[int, int]:
-        """Process all resources for a company."""
-        company_name = company["name"]
-        resources = company.get("resources", [])
-        
-        if not resources:
-            logger.warning(f"No resources found for company {company_name}")
-            return 0, 0
-            
-        logger.info(f"Processing {len(resources)} resources for company {company_name}")
-        
-        # Track success/failure counts
-        success_count = 0
-        total_count = len(resources)
-        
-        # Process each resource
-        for resource_url in resources:
-            if self.should_exit:
-                logger.info("Shutdown signal received, stopping processing")
-                break
-                
-            # Process the webpage
-            metadata = {
-                "company": company_name,
-                "focus_areas": company.get("focus_areas", []),
-                "location": company.get("location", "Massachusetts")
+            # Create memory data according to the schema
+            memory_data = {
+                'content': content,
+                'metadata': metadata or {},
+                'source_type': metadata.get('type', 'document'),
+                'url': metadata.get('url', ''),
+                'title': metadata.get('title', metadata.get('file_name', '')),
+                'chunk_index': metadata.get('chunk_index'),
+                'total_chunks': metadata.get('total_chunks'),
+                'company': metadata.get('company_name', ''),
+                'sector': metadata.get('sector_name', '')
             }
             
-            success = await self.process_webpage(resource_url, company_name, metadata)
-            if success:
-                success_count += 1
-                
-        # Mark company as indexed if at least one resource was successful
-        if success_count > 0:
-            mark_company_as_indexed(company_name)
-            await self.supabase_rate_limiter.wait()
-            save_company_index_status()
+            # Add embedding if we have OpenAI API key
+            if os.getenv('OPENAI_API_KEY'):
+                embedding = await self.get_embedding(content)
+                if embedding:
+                    memory_data['embedding'] = embedding
             
-        return success_count, total_count
-
-    async def process_pdf_report(self, report_path: str) -> bool:
-        """Process a PDF report and store its content."""
-        try:
-            if not os.path.exists(report_path):
-                logger.warning(f"Report file not found: {report_path}")
+            # Insert into Supabase
+            await self.supabase_rate_limiter.wait()
+            
+            response = requests.post(
+                f"{SUPABASE_URL}/rest/v1/climate_memories",
+                headers=SUPABASE_HEADERS,
+                json=memory_data
+            )
+            
+            if response.status_code == 201:
+                logger.info(f"Successfully inserted memory from {metadata.get('source', 'unknown')}")
+                return True
+            else:
+                logger.error(f"Failed to insert memory: {response.status_code} {response.text}")
                 return False
                 
-            logger.info(f"Processing PDF report: {report_path}")
+        except Exception as e:
+            logger.error(f"Error storing memory: {str(e)}")
+            return False
+    
+    async def process_pdf(self, file_path: str) -> Dict:
+        """Process a PDF file."""
+        try:
+            reader = PdfReader(file_path)
+            content = ""
+            metadata = {}
             
-            # Extract filename and title
-            filename = os.path.basename(report_path)
-            title = filename.replace("_", " ").replace(".pdf", "")
+            # Extract metadata if available
+            if reader.metadata:
+                metadata = {k.lower().replace('/', '_'): v for k, v in reader.metadata.items() if v}
             
-            # Read PDF content
-            pdf_text = ""
-            pdf_reader = PdfReader(report_path)
-            
-            # Combine text from all pages
-            for page in pdf_reader.pages:
+            # Extract text from all pages
+            for page in reader.pages:
                 page_text = page.extract_text()
                 if page_text:
-                    pdf_text += page_text + "\n\n"
-            
-            if not pdf_text or len(pdf_text.strip()) < 100:
-                logger.warning(f"PDF content too short or empty from {report_path}")
-                return False
+                    content += page_text + "\n"
                 
-            logger.info(f"Successfully extracted {len(pdf_text)} chars from {report_path}")
+            logger.info(f"Successfully processed PDF: {file_path} ({len(reader.pages)} pages)")
             
-            # Create chunks
-            chunks = self.smart_chunker(pdf_text)
-            logger.info(f"Created {len(chunks)} chunks from {report_path}")
-            
-            # Store each chunk
-            success_count = 0
-            for chunk_index, chunk in enumerate(chunks):
-                if self.should_exit:
-                    break
-                    
-                success = await self.store_document(
-                    source_type="report",
-                    text=chunk,
-                    metadata={
-                        "file_path": report_path,
-                        "title": title,
-                        "chunk_index": chunk_index,
-                        "total_chunks": len(chunks),
-                        "crawl_time": datetime.now(timezone.utc).isoformat(),
-                    }
-                )
-                
-                if success:
-                    success_count += 1
-            
-            return success_count > 0
-            
+            return {
+                'content': content,
+                'metadata': {
+                    **metadata,
+                    'file_type': 'pdf',
+                    'file_name': Path(file_path).name,
+                    'num_pages': len(reader.pages),
+                    'indexed_at': datetime.now(timezone.utc).isoformat()
+                }
+            }
         except Exception as e:
-            logger.error(f"Error processing PDF report {report_path}: {str(e)}")
-            logger.error(traceback.format_exc())
-            return False
-
-    async def is_resource_already_indexed(self, url: str) -> bool:
-        """Check if a resource is already indexed in Supabase."""
+            logger.error(f"Error processing PDF file {file_path}: {str(e)}")
+            return None
+    
+    async def process_markdown(self, file_path: str) -> Dict:
+        """Process a markdown file."""
         try:
-            # Wait for rate limiter
+            with open(file_path, 'r', encoding='utf-8') as f:
+                md_content = f.read()
+            
+            # Convert markdown to plain text
+            html_content = markdown.markdown(md_content)
+            # A simple way to strip HTML tags
+            plain_text = re.sub(r'<[^>]+>', ' ', html_content)
+            
+            logger.info(f"Successfully processed markdown: {file_path}")
+            
+            return {
+                'content': plain_text,
+                'metadata': {
+                    'file_type': 'markdown',
+                    'file_name': Path(file_path).name,
+                    'indexed_at': datetime.now(timezone.utc).isoformat()
+                }
+            }
+        except Exception as e:
+            logger.error(f"Error processing markdown file {file_path}: {str(e)}")
+            return None
+    
+    async def process_document(self, file_path: str) -> Optional[Dict]:
+        """Process a document based on its file extension."""
+        file_path = Path(file_path)
+        
+        if file_path.suffix.lower() == '.pdf':
+            return await self.process_pdf(str(file_path))
+        elif file_path.suffix.lower() == '.md':
+            return await self.process_markdown(str(file_path))
+        else:
+            logger.warning(f"Unsupported file type: {file_path}")
+            return None
+    
+    async def process_documents_directory(self, directory: str) -> None:
+        """Process all documents in a directory."""
+        try:
+            docs_dir = Path(directory)
+            if not docs_dir.exists():
+                logger.warning(f"Directory {directory} does not exist")
+                return
+
+            # Find all PDF files only (skip markdown files)
+            files_to_process = []
+            for file_path in docs_dir.glob('**/*.pdf'):
+                if file_path.is_file():
+                    files_to_process.append(file_path)
+            
+            logger.info(f"Found {len(files_to_process)} documents to process")
+            
+            # Process files sequentially
+            for file_path in files_to_process:
+                logger.info(f"Processing document: {file_path}")
+                
+                # Process the document
+                result = await self.process_document(str(file_path))
+                
+                if not result:
+                    logger.error(f"Failed to process document: {file_path}")
+                    continue
+                
+                # For long documents, split into chunks
+                content = result['content']
+                if len(content) > self.chunk_size:
+                    chunks = self.smart_chunker(content)
+                    logger.info(f"Split document into {len(chunks)} chunks")
+                    
+                    # Store each chunk as a separate memory
+                    success_count = 0
+                    for i, chunk in enumerate(chunks):
+                        # Add chunk metadata
+                        chunk_metadata = {
+                            **result['metadata'],
+                            'source': str(file_path),
+                            'type': 'document',
+                            'chunk_index': i,
+                            'total_chunks': len(chunks)
+                        }
+                        
+                        # Store the chunk
+                        if await self.store_memory(chunk, chunk_metadata):
+                            success_count += 1
+                    
+                    logger.info(f"Successfully stored {success_count}/{len(chunks)} chunks from {file_path}")
+                else:
+                    # Store single document
+                    metadata = {
+                        **result['metadata'],
+                        'source': str(file_path),
+                        'type': 'document'
+                    }
+                    
+                    if await self.store_memory(content, metadata):
+                        logger.info(f"Successfully stored document: {file_path}")
+                    else:
+                        logger.error(f"Failed to store document: {file_path}")
+                
+        except Exception as e:
+            logger.error(f"Error processing documents directory: {str(e)}")
+            raise
+    
+    async def company_exists(self, company_name: str) -> Optional[str]:
+        """Check if a company already exists in the database."""
+        try:
             await self.supabase_rate_limiter.wait()
             
-            # Check for URL in Supabase
-            result = supabase.table("climate_memories").select("id").eq("url", url).limit(1).execute()
-            exists = len(result.data) > 0
+            # URL encode the name for the query
+            encoded_name = requests.utils.quote(company_name)
             
-            if exists:
-                logger.info(f"Resource {url} already indexed, skipping")
+            response = requests.get(
+                f"{SUPABASE_URL}/rest/v1/companies?select=id&name=eq.{encoded_name}",
+                headers=SUPABASE_HEADERS
+            )
             
-            return exists
+            if response.status_code == 200 and response.json():
+                company_id = response.json()[0]['id']
+                return company_id
             
+            return None
+                
         except Exception as e:
-            logger.warning(f"Error checking if resource exists: {str(e)}")
-            return False
-
-    async def process_all_companies(self, company_names: Optional[List[str]] = None, force: bool = False):
-        """Process all companies or a specific list."""
-        total_processed = 0
-        total_resources = 0
-        
-        # Get companies to process
-        if company_names:
-            companies = [c for c in ACT_COMPANIES if c["name"] in company_names]
-        else:
-            if not force:
-                companies = get_unindexed_companies()
+            logger.error(f"Error checking if company exists: {str(e)}")
+            return None
+    
+    async def insert_company(self, company_data: Dict) -> Optional[str]:
+        """Insert a company into the companies table."""
+        try:
+            await self.supabase_rate_limiter.wait()
+            
+            # Check if company already exists by name
+            if 'name' in company_data:
+                company_id = await self.company_exists(company_data['name'])
+                if company_id:
+                    logger.info(f"Company '{company_data['name']}' already exists with ID {company_id}, updating")
+                    
+                    # Update existing company
+                    await self.supabase_rate_limiter.wait()
+                    response = requests.patch(
+                        f"{SUPABASE_URL}/rest/v1/companies?id=eq.{company_id}",
+                        headers=SUPABASE_HEADERS,
+                        json=company_data
+                    )
+                    
+                    if response.status_code in [200, 204]:
+                        logger.info(f"Successfully updated company: {company_data['name']}")
+                        return company_id
+                    else:
+                        logger.error(f"Failed to update company: {response.status_code} {response.text}")
+                        return company_id  # Still return ID since it exists
+            
+            # Insert new company
+            response = requests.post(
+                f"{SUPABASE_URL}/rest/v1/companies",
+                headers=SUPABASE_HEADERS,
+                json=company_data
+            )
+            
+            if response.status_code == 201 and response.json():
+                company_id = response.json()[0]['id']
+                logger.info(f"Successfully inserted company: {company_data.get('name', 'Unknown')}")
+                return company_id
             else:
+                logger.error(f"Failed to insert company: {response.status_code} {response.text}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error inserting company: {str(e)}")
+            return None
+    
+    async def insert_job_opportunity(self, job_data: Dict) -> bool:
+        """Insert a job opportunity into the job_opportunities table."""
+        try:
+            await self.supabase_rate_limiter.wait()
+            
+            # Insert job opportunity
+            response = requests.post(
+                f"{SUPABASE_URL}/rest/v1/job_opportunities",
+                headers=SUPABASE_HEADERS,
+                json=job_data
+            )
+            
+            if response.status_code == 201:
+                logger.info(f"Successfully inserted job opportunity: {job_data.get('title', 'Unknown')}")
+                return True
+            else:
+                logger.error(f"Failed to insert job opportunity: {response.status_code} {response.text}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error inserting job opportunity: {str(e)}")
+            return False
+    
+    async def training_program_exists(self, title: str, provider: str) -> Optional[str]:
+        """Check if a training program already exists in the database."""
+        try:
+            await self.supabase_rate_limiter.wait()
+            
+            # URL encode the parameters
+            encoded_title = requests.utils.quote(title)
+            encoded_provider = requests.utils.quote(provider)
+            
+            response = requests.get(
+                f"{SUPABASE_URL}/rest/v1/training_programs?select=id&title=eq.{encoded_title}&provider=eq.{encoded_provider}",
+                headers=SUPABASE_HEADERS
+            )
+            
+            if response.status_code == 200 and response.json():
+                program_id = response.json()[0]['id']
+                return program_id
+            
+            return None
+                
+        except Exception as e:
+            logger.error(f"Error checking if training program exists: {str(e)}")
+            return None
+    
+    async def insert_training_program(self, program_data: Dict) -> bool:
+        """Insert a training program into the training_programs table."""
+        try:
+            await self.supabase_rate_limiter.wait()
+            
+            # Check if program already exists by title and provider
+            if 'title' in program_data and 'provider' in program_data:
+                program_id = await self.training_program_exists(program_data['title'], program_data['provider'])
+                
+                if program_id:
+                    logger.info(f"Training program '{program_data['title']}' already exists, updating")
+                    
+                    # Update existing program
+                    await self.supabase_rate_limiter.wait()
+                    response = requests.patch(
+                        f"{SUPABASE_URL}/rest/v1/training_programs?id=eq.{program_id}",
+                        headers=SUPABASE_HEADERS,
+                        json=program_data
+                    )
+                    
+                    if response.status_code in [200, 204]:
+                        logger.info(f"Successfully updated training program: {program_data['title']}")
+                        return True
+                    else:
+                        logger.error(f"Failed to update training program: {response.status_code} {response.text}")
+                        return False
+            
+            # Insert new program
+            response = requests.post(
+                f"{SUPABASE_URL}/rest/v1/training_programs",
+                headers=SUPABASE_HEADERS,
+                json=program_data
+            )
+            
+            if response.status_code == 201:
+                logger.info(f"Successfully inserted training program: {program_data.get('title', 'Unknown')}")
+                return True
+            else:
+                logger.error(f"Failed to insert training program: {response.status_code} {response.text}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error inserting training program: {str(e)}")
+            return False
+    
+    async def insert_sector(self, sector_data: Dict) -> bool:
+        """Insert a sector into the sectors table."""
+        try:
+            await self.supabase_rate_limiter.wait()
+            
+            # Check if sector already exists by name
+            if 'name' in sector_data:
+                encoded_name = requests.utils.quote(sector_data['name'])
+                response = requests.get(
+                    f"{SUPABASE_URL}/rest/v1/sectors?select=id&name=eq.{encoded_name}",
+                    headers=SUPABASE_HEADERS
+                )
+                
+                if response.status_code == 200 and response.json():
+                    sector_id = response.json()[0]['id']
+                    logger.info(f"Sector '{sector_data['name']}' already exists, updating")
+                    
+                    # Update existing sector
+                    await self.supabase_rate_limiter.wait()
+                    response = requests.patch(
+                        f"{SUPABASE_URL}/rest/v1/sectors?id=eq.{sector_id}",
+                        headers=SUPABASE_HEADERS,
+                        json=sector_data
+                    )
+                    
+                    if response.status_code in [200, 204]:
+                        logger.info(f"Successfully updated sector: {sector_data['name']}")
+                        return True
+                    else:
+                        logger.error(f"Failed to update sector: {response.status_code} {response.text}")
+                        return False
+            
+            # Insert new sector
+            response = requests.post(
+                f"{SUPABASE_URL}/rest/v1/sectors",
+                headers=SUPABASE_HEADERS,
+                json=sector_data
+            )
+            
+            if response.status_code == 201:
+                logger.info(f"Successfully inserted sector: {sector_data.get('name', 'Unknown')}")
+                return True
+            else:
+                logger.error(f"Failed to insert sector: {response.status_code} {response.text}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error inserting sector: {str(e)}")
+            return False
+    
+    async def process_act_companies(self) -> None:
+        """Process and insert ACT_COMPANIES data from constants.py."""
+        logger.info("Processing ACT_COMPANIES data")
+        
+        try:
+            # Try to get companies from database first
+            companies = await self.get_act_companies_from_db()
+            if not companies:
                 companies = ACT_COMPANIES
-        
-        if not companies:
-            logger.info("No unindexed companies found to process")
-            return 0, 0
             
-        logger.info(f"Processing {len(companies)} companies")
-        
-        # Process each company
-        for company in companies:
-            if self.should_exit:
-                break
+            success_count = 0
+            for company in companies:
+                try:
+                    # Extract data from company dict
+                    company_data = {
+                        "name": company.get("name"),
+                        "sector": company.get("sector"),
+                        "website": company.get("website"),
+                        "description": company.get("description", ""),
+                        "location": company.get("location", ""),
+                        "focus_areas": json.dumps(company.get("focus_areas", [])),
+                        "audience": json.dumps(company.get("audience", [])),
+                        "skill_sets": json.dumps(company.get("skill_sets", [])),
+                        "created_at": datetime.now(timezone.utc).isoformat(),
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                        "is_veteran_friendly": company.get("is_veteran_friendly", False),
+                        "is_ej_friendly": company.get("is_ej_friendly", False),
+                        "is_gateway_focused": company.get("is_gateway_focused", False),
+                    }
+                    
+                    # Insert into companies table
+                    response = requests.post(
+                        f"{SUPABASE_URL}/rest/v1/companies",
+                        headers=SUPABASE_HEADERS,
+                        json=company_data
+                    )
+                    
+                    if response.status_code == 201 and response.json():
+                        success_count += 1
+                        logger.info(f"Successfully added company: {company.get('name')}")
+                    else:
+                        logger.warning(f"Failed to add company: {company.get('name')}")
                 
-            company_name = company["name"]
-            logger.info(f"\n=== Processing company: {company_name} ===")
+                except Exception as e:
+                    logger.error(f"Error processing company {company.get('name', 'Unknown')}: {str(e)}")
             
-            # Skip if already indexed and not forced
-            if is_company_indexed(company_name) and not force:
-                logger.info(f"Company {company_name} already indexed, skipping")
-                continue
-                
-            # Process company resources
-            success_count, total_count = await self.process_company(company)
-            logger.info(f"Processed {success_count}/{total_count} resources for {company_name}")
-            
-            total_processed += success_count
-            total_resources += total_count
+            logger.info(f"Successfully processed {success_count}/{len(companies)} ACT companies")
         
-        logger.info(f"\n=== Summary ===")
-        logger.info(f"Successfully processed {total_processed}/{total_resources} resources")
-        
-        return total_processed, total_resources
+        except Exception as e:
+            logger.error(f"Error processing ACT_COMPANIES: {str(e)}")
 
-    async def process_all_reports(self, force: bool = False):
-        """Process all PDF reports."""
-        total_success = 0
-        total_reports = 0
+    async def get_act_companies_from_db(self):
+        """Retrieve ACT companies from the database instead of constants"""
+        try:
+            response = requests.get(
+                f"{SUPABASE_URL}/rest/v1/companies?select=*",
+                headers=SUPABASE_HEADERS
+            )
+            if response.status_code == 200 and response.json():
+                logger.info(f"Retrieved {len(response.json())} companies from database")
+                return response.json()
+            else:
+                logger.warning("No companies found in database, using fallback")
+                return ACT_COMPANIES
+        except Exception as e:
+            logger.error(f"Error retrieving companies from database: {e}")
+            return ACT_COMPANIES
+    
+    async def process_sectors(self) -> None:
+        """Process and insert sector data from constants.py."""
+        logger.info("Starting sector data ingestion...")
+        success_count = 0
         
-        # List of reports to process
-        reports_to_process = []
-        
-        # Check for local PDF files in reports directory
-        for report_resource in CLIMATE_REPORT_RESOURCES:
-            if not report_resource.startswith("http"):
-                report_path = os.path.join(self.config.reports_dir, report_resource)
-                if os.path.exists(report_path):
-                    reports_to_process.append(report_path)
-                else:
-                    logger.warning(f"Report file not found: {report_path}")
-        
-        if not reports_to_process:
-            logger.warning("No local PDF reports found to process")
-            return 0, 0
+        for sector_name in CLEAN_ENERGY_SECTORS:
+            # Create a simple sector entry
+            sector_data = {
+                'name': sector_name,
+                'description': f"Clean energy sector: {sector_name}"
+            }
             
-        logger.info(f"Processing {len(reports_to_process)} PDF reports")
-        
-        # Process each report
-        for report_path in reports_to_process:
-            if self.should_exit:
-                break
+            # Insert sector
+            if await self.insert_sector(sector_data):
+                success_count += 1
                 
-            logger.info(f"\n=== Processing report: {report_path} ===")
-            total_reports += 1
-            
-            # Process report
-            success = await self.process_pdf_report(report_path)
-            if success:
-                total_success += 1
+                # Store sector data as a memory for vector search
+                await self.store_memory(
+                    f"Sector: {sector_name}\n\nDescription: {sector_data['description']}",
+                    {
+                        'source': 'constants.py',
+                        'type': 'sector',
+                        'sector_name': sector_name
+                    }
+                )
         
-        logger.info(f"\n=== PDF Report Summary ===")
-        logger.info(f"Successfully processed {total_success}/{total_reports} reports")
+        logger.info(f"Successfully processed {success_count}/{len(CLEAN_ENERGY_SECTORS)} sectors")
+    
+    async def process_pathways(self) -> None:
+        """Process and insert career pathway data from constants.py."""
+        logger.info("Starting career pathway data ingestion...")
+        success_count = 0
         
-        return total_success, total_reports
+        for pathway in TRANSITION_PATHWAYS:
+            # Store pathway data as a memory for vector search
+            if await self.store_memory(
+                f"Career Pathway: {pathway}",
+                {
+                    'source': 'constants.py',
+                    'type': 'career_pathway',
+                    'pathway': pathway
+                }
+            ):
+                success_count += 1
+        
+        logger.info(f"Successfully processed {success_count}/{len(TRANSITION_PATHWAYS)} career pathways")
 
-async def main():
-    """Main entry point with argument parsing."""
-    parser = argparse.ArgumentParser(description="Data Ingestion Tool for Massachusetts Climate Economy Assistant")
-    parser.add_argument("--companies", help="Only process specified companies (comma-separated)")
-    parser.add_argument("--reports", action="store_true", help="Only process PDF reports")
-    parser.add_argument("--force", action="store_true", help="Force reindexing even if already indexed")
-    
-    args = parser.parse_args()
-    
-    # Initialize the ingester
-    ingester = ClimateDataIngester()
-    
+async def main() -> None:
+    """Main function to run the data ingestion process."""
     try:
-        # Setup signal handlers for graceful shutdown
-        import signal
-        for sig in (signal.SIGINT, signal.SIGTERM):
-            signal.signal(sig, ingester.handle_shutdown_signal)
+        logger.info("Starting data ingestion process...")
         
-        # Process according to arguments
-        if args.companies:
-            company_names = [name.strip() for name in args.companies.split(",")]
-            await ingester.process_all_companies(company_names, args.force)
-        elif args.reports:
-            await ingester.process_all_reports(args.force)
-        else:
-            # Process both
-            await ingester.process_all_companies(force=args.force)
-            await ingester.process_all_reports(force=args.force)
-            
+        # Create ingester
+        ingester = ClimateDataIngester()
+        
+        # Process documents only since constants.py doesn't have all the expected data
+        logger.info("Starting document processing...")
+        docs_path = Path(__file__).parent.parent / 'docs'
+        await ingester.process_documents_directory(str(docs_path))
+        
+        logger.info("Data ingestion completed successfully!")
+        
     except Exception as e:
-        logger.error(f"Error in main: {str(e)}")
+        logger.error(f"Error during data ingestion: {str(e)}")
+        import traceback
         logger.error(traceback.format_exc())
-    finally:
-        # Save progress
-        save_company_index_status()
-        logger.info("Data ingestion completed")
+        sys.exit(1)
 
 if __name__ == "__main__":
-    # Run the async main function
     asyncio.run(main()) 

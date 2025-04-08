@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { signIn } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { Button } from '@/components/ui/Button';
 
 export default function SignupForm() {
   const [name, setName] = useState('');
@@ -76,133 +77,133 @@ export default function SignupForm() {
   };
 
   return (
-    <div className="card w-full max-w-md bg-base-100 shadow-xl">
-      <div className="card-body">
-        <h2 className="card-title text-2xl font-bold text-center mb-6">Create an Account</h2>
-        
-        {error && (
-          <div className="alert alert-error mb-4">
-            <svg xmlns="http://www.w3.org/2000/svg" className="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-            <span>{error}</span>
-          </div>
-        )}
-        
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="form-control">
-            <label className="label">
-              <span className="label-text">Full Name</span>
-            </label>
-            <input
-              type="text"
-              placeholder="John Doe"
-              className="input input-bordered w-full"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-            />
-          </div>
-          
-          <div className="form-control">
-            <label className="label">
-              <span className="label-text">Email</span>
-            </label>
-            <input
-              type="email"
-              placeholder="your@email.com"
-              className="input input-bordered w-full"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-            />
-          </div>
-          
-          <div className="form-control">
-            <label className="label">
-              <span className="label-text">Password</span>
-            </label>
-            <input
-              type="password"
-              placeholder="********"
-              className="input input-bordered w-full"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              minLength={8}
-            />
-            <label className="label">
-              <span className="label-text-alt">Must be at least 8 characters</span>
-            </label>
-          </div>
-          
-          <div className="form-control">
-            <label className="label">
-              <span className="label-text">Location (City, State)</span>
-            </label>
-            <input
-              type="text"
-              placeholder="Boston, MA"
-              className="input input-bordered w-full"
-              value={location}
-              onChange={(e) => setLocation(e.target.value)}
-            />
-          </div>
-          
-          <div className="form-control">
-            <label className="label cursor-pointer justify-start gap-2">
-              <input
-                type="checkbox"
-                className="checkbox checkbox-primary"
-                checked={isEJCommunity}
-                onChange={(e) => setIsEJCommunity(e.target.checked)}
-              />
-              <span className="label-text">I live in an Environmental Justice community</span>
-            </label>
-          </div>
-          
-          <div className="form-control">
-            <label className="label cursor-pointer justify-start gap-2">
-              <input
-                type="checkbox"
-                className="checkbox checkbox-primary"
-                checked={isVeteran}
-                onChange={(e) => setIsVeteran(e.target.checked)}
-              />
-              <span className="label-text">I am a veteran or active military</span>
-            </label>
-          </div>
-          
-          <div className="form-control mt-6">
-            <button
-              type="submit"
-              className={`btn btn-primary w-full ${loading ? 'loading' : ''}`}
-              disabled={loading}
-            >
-              {loading ? 'Creating account...' : 'Sign Up'}
-            </button>
-          </div>
-        </form>
-        
-        <div className="divider">OR</div>
-        
-        <button
-          onClick={handleGoogleSignUp}
-          className="btn btn-outline w-full"
-          disabled={loading}
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12.545 10.239v3.821h5.445c-.712 2.315-2.647 3.972-5.445 3.972a6.033 6.033 0 110-12.064c1.498 0 2.866.549 3.921 1.453l2.814-2.814A9.969 9.969 0 0012.545 2C8.089 2 4.416 5.274 3.758 9.501a10.08 10.08 0 000 4.978c.658 4.227 4.331 7.5 8.787 7.5 4.898 0 8.995-3.514 9.86-8.148a11.79 11.79 0 00.176-2.033c0-.633-.054-1.197-.138-1.673H12.545z"></path>
-          </svg>
-          Sign up with Google
-        </button>
-        
-        <div className="text-center mt-4">
-          <p>
-            Already have an account?{' '}
-            <Link href="/auth/signin" className="link link-primary">
-              Sign in
-            </Link>
-          </p>
+    <div className="w-full max-w-md bg-white shadow-xl rounded-lg p-6">
+      <h2 className="text-2xl font-bold text-center mb-6">Create Your Account</h2>
+      
+      {error && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+          <span>{error}</span>
         </div>
+      )}
+      
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="form-control">
+          <label className="label">
+            <span className="label-text">Full Name</span>
+          </label>
+          <input
+            type="text"
+            placeholder="John Doe"
+            className="input input-bordered w-full"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+          />
+        </div>
+        
+        <div className="form-control">
+          <label className="label">
+            <span className="label-text">Email</span>
+          </label>
+          <input
+            type="email"
+            placeholder="your@email.com"
+            className="input input-bordered w-full"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+          />
+        </div>
+        
+        <div className="form-control">
+          <label className="label">
+            <span className="label-text">Password</span>
+          </label>
+          <input
+            type="password"
+            placeholder="********"
+            className="input input-bordered w-full"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            minLength={8}
+          />
+          <label className="label">
+            <span className="label-text-alt">Must be at least 8 characters</span>
+          </label>
+        </div>
+        
+        <div className="form-control">
+          <label className="label">
+            <span className="label-text">Location (City, State)</span>
+          </label>
+          <input
+            type="text"
+            placeholder="Boston, MA"
+            className="input input-bordered w-full"
+            value={location}
+            onChange={(e) => setLocation(e.target.value)}
+          />
+        </div>
+        
+        <div className="form-control">
+          <label className="label cursor-pointer justify-start gap-2">
+            <input
+              type="checkbox"
+              className="checkbox checkbox-primary"
+              checked={isEJCommunity}
+              onChange={(e) => setIsEJCommunity(e.target.checked)}
+            />
+            <span className="label-text">I live in an Environmental Justice community</span>
+          </label>
+        </div>
+        
+        <div className="form-control">
+          <label className="label cursor-pointer justify-start gap-2">
+            <input
+              type="checkbox"
+              className="checkbox checkbox-primary"
+              checked={isVeteran}
+              onChange={(e) => setIsVeteran(e.target.checked)}
+            />
+            <span className="label-text">I am a veteran or active military</span>
+          </label>
+        </div>
+        
+        <div className="form-control mt-6">
+          <Button
+            type="submit"
+            variant="primary"
+            className="w-full"
+            disabled={loading}
+          >
+            {loading ? 'Creating account...' : 'Create Account'}
+          </Button>
+        </div>
+      </form>
+      
+      <div className="relative flex py-5 items-center mt-4">
+        <div className="flex-grow border-t border-gray-300"></div>
+        <span className="flex-shrink mx-4 text-gray-600">OR</span>
+        <div className="flex-grow border-t border-gray-300"></div>
+      </div>
+      
+      <Button
+        onClick={handleGoogleSignUp}
+        variant="outline"
+        className="w-full"
+        disabled={loading}
+      >
+        <span className="mr-2">Sign up with Google</span>
+      </Button>
+      
+      <div className="text-center mt-6">
+        <p className="text-gray-600">
+          Already have an account?{' '}
+          <Link href="/auth/login" className="text-blue-600 hover:underline">
+            Sign In
+          </Link>
+        </p>
       </div>
     </div>
   );

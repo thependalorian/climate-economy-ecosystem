@@ -27,7 +27,8 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 # Initialize OpenAI client
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+openai.api_key = os.getenv("OPENAI_API_KEY")
+client = openai
 
 # Database of common international credential equivalencies
 # This serves as a fallback if the AI evaluation fails

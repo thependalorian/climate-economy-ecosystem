@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { metrics_service } from '@/lib/monitoring/metrics_service';
 import { auth } from '@/auth';
-import { createLangSmithClient, LangChainTracer } from 'langsmith';
+import * as langsmithPackage from 'langsmith';
 import { OpenAI } from 'openai';
 import { v4 as uuidv4 } from 'uuid';
 import { createClient } from '@supabase/supabase-js';
@@ -19,10 +19,11 @@ const openai = new OpenAI({
 });
 
 // Initialize LangSmith client
-const langsmith = createLangSmithClient({
-  apiKey: process.env.LANGSMITH_API_KEY,
-  projectName: 'climate-economy-chat'
+const createLangSmithClient = langsmithPackage.createLangSmithClient || (() => {
+  console.warn("createLangSmithClient is not available; using dummy fallback.");
+  return {};
 });
+const { LangChainTracer } = langsmithPackage;
 
 // Initialize Supabase client
 const supabaseUrl = process.env.SUPABASE_URL;
@@ -49,7 +50,7 @@ export async function POST(request) {
   const runId = uuidv4();
   const tracer = new LangChainTracer({
     projectName: 'climate-economy-chat',
-    client: langsmith,
+    client: createLangSmithClient(),
     run_id: runId,
     name: 'streaming_chat'
   });

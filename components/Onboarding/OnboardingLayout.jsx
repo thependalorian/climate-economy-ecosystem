@@ -9,7 +9,6 @@
 import React from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { ArrowLeft } from 'lucide-react';
 
 const OnboardingLayout = ({ children }) => {
   return (
@@ -31,7 +30,7 @@ const OnboardingLayout = ({ children }) => {
             href="/" 
             className="text-gray-600 hover:text-midnight-forest flex items-center text-sm"
           >
-            <ArrowLeft size={16} className="mr-1" />
+            <span aria-hidden="true" className="mr-1">⬅️</span>
             Back to Home
           </Link>
         </div>

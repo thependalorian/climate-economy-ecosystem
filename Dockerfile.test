@@ -1,0 +1,41 @@
+# Use Node.js LTS as the base image
+FROM node:20-alpine
+
+# Set working directory
+WORKDIR /app
+
+# Install Python and pip for the Python components
+RUN apk add --no-cache python3 py3-pip
+
+# Copy package files
+COPY package.json package-lock.json* ./
+
+# Install dependencies
+RUN npm ci
+
+# Install Python dependencies in a virtual environment
+COPY requirements.txt ./
+RUN python3 -m venv /app/venv \
+    && . /app/venv/bin/activate \
+    && pip3 install --upgrade pip \
+    && pip3 install --no-cache-dir -r requirements.txt
+
+# Copy the rest of the application
+COPY . .
+
+# Set environment variables for testing
+ENV NODE_ENV=test
+ENV NEXT_PUBLIC_SUPABASE_URL=http://supabase:8000
+ENV SUPABASE_SERVICE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU
+ENV OPENAI_API_KEY=mock-openai-key
+ENV NEXTAUTH_URL=http://localhost:3000
+ENV NEXTAUTH_SECRET=test-secret
+ENV GOOGLE_CLIENT_ID=mock-google-client-id
+ENV GOOGLE_CLIENT_SECRET=mock-google-client-secret
+
+# Set up environment variables for Python
+ENV PATH="/app/venv/bin:$PATH"
+ENV PYTHONPATH="/app"
+
+# Command to run tests
+CMD ["/bin/sh", "-c", "npm test"]

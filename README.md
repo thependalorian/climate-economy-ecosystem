@@ -43,7 +43,7 @@ This platform connects job seekers with clean tech opportunities in Massachusett
 The Climate Ecosystem Assistant is designed to create a just, rapid, and equitable climate transition by connecting underrepresented communities with training and career opportunities in renewable energy, clean transportation, and decarbonizing buildings.
 
 ## Target Populations
-- Residents of Environmental Justice neighborhoods 
+- Residents of Environmental Justice neighborhoods
 - Individuals from low-income backgrounds
 - Minority and Women-owned Business Enterprises
 - Veterans transitioning to civilian careers
@@ -499,6 +499,61 @@ class UserProfile(BaseModel):
 ```
 
 ### Agent Workflow
+
+```python
+# graph/climate_state.py
+
+from typing import TypedDict, List, Dict, Any, Optional
+
+class ClimateState(TypedDict):
+    """State for the climate economy agent"""
+    user_id: str
+    query: str
+    context: List[Dict[str, Any]]
+    response: Optional[str]
+    job_recommendations: List[Dict[str, Any]]
+    training_paths: List[Dict[str, Any]]
+    reasoning_steps: List[Dict[str, Any]]
+    feedback: Optional[Dict[str, Any]]
+    is_veteran: bool
+    is_ej_community: bool
+    is_international: bool
+
+# graph/agents.py
+
+from langchain.agents import AgentExecutor
+from langchain.prompts import ChatPromptTemplate
+from langchain.tools import Tool
+from langchain_openai import ChatOpenAI
+from langgraph.graph import StateGraph
+
+from .climate_state import ClimateState
+from .tools import DBRetrieverTool, WebSearchTool
+
+def create_agent_workflow():
+    """Create the agent workflow for the climate economy assistant"""
+    # Create a new graph
+    workflow = StateGraph(ClimateState)
+
+    # Add nodes for each step in the workflow
+    workflow.add_node("search_jobs", search_jobs)
+    workflow.add_node("analyze_skills_fit", analyze_skills_fit)
+    workflow.add_node("generate_recommendations_report", generate_recommendations_report)
+    workflow.add_node("collect_feedback", collect_feedback)
+
+    # Define the edges between nodes
+    workflow.add_edge("search_jobs", "analyze_skills_fit")
+    workflow.add_edge("analyze_skills_fit", "generate_recommendations_report")
+    workflow.add_edge("generate_recommendations_report", "collect_feedback")
+
+    # Set the entry point
+    workflow.set_entry_point("search_jobs")
+
+    # Compile the workflow
+    return workflow.compile()
+```
+
+#### Agent Implementation Details
 ```python
 # climate_economy_ecosystem/graph/climate_state.py
 
@@ -696,6 +751,37 @@ Based on the user profile, the system provides:
 - Socket.IO for real-time updates
 
 ## Getting Started
+
+### Prerequisites
+
+- Node.js 18+ and npm
+- Python 3.9+
+- Supabase account
+- OpenAI API key
+- Docker and Docker Compose (for Docker setup)
+
+### Installation (Standard Setup)
+
+```bash
+# Clone the repository
+git clone https://github.com/yourusername/climate-economy-ecosystem.git
+cd climate-economy-ecosystem
+
+# Install dependencies
+npm install
+pip install -r requirements.txt
+
+# Set up environment variables
+cp .env.example .env.local
+# Edit .env.local with your API keys and configuration
+
+# Run database migrations
+python setup_rlhf_tables.py
+
+# Start the development server
+npm run dev
+```
+
 To start developing:
 
 1. Clone the repository
@@ -704,6 +790,52 @@ To start developing:
 4. Initialize Supabase tables
 5. Run database migrations
 6. Start the development server with `npm run dev`
+
+### Docker Setup (Recommended)
+
+The easiest way to run the Climate Economy Ecosystem is using Docker. This ensures a consistent environment and simplifies setup.
+
+```bash
+# Clone the repository
+git clone https://github.com/yourusername/climate-economy-ecosystem.git
+cd climate-economy-ecosystem
+
+# Create .env file with your configuration
+cp .env.example .env
+
+# Start the application in production mode
+npm run docker:prod
+
+# Access the application at http://localhost:3000
+```
+
+#### Docker Commands
+
+**Production Commands**:
+- **Start production environment**: `npm run docker:prod`
+- **Build production containers**: `npm run docker:prod:build`
+- **Start production containers**: `npm run docker:prod:up`
+- **Stop production containers**: `npm run docker:prod:down`
+
+**Development Commands**:
+- **Build containers**: `npm run docker:build`
+- **Start all containers**: `npm run docker:up`
+- **Stop containers**: `npm run docker:down`
+- **Run all in development mode**: `npm run docker:dev`
+
+**Component-Specific Commands**:
+- **Run frontend only**: `npm run docker:dev:frontend`
+- **Run Python backend only**: `npm run docker:dev:python`
+
+**Testing Commands**:
+- **Run all tests**: `npm run docker:test`
+- **Run frontend tests only**: `npm run docker:test:frontend`
+- **Run Python tests only**: `npm run docker:test:python`
+
+**Database Commands**:
+- **Run migrations**: `npm run docker:migrate`
+
+**For detailed Docker setup instructions, see [DOCKER_SETUP.md](DOCKER_SETUP.md)**
 
 ## Deployment
 The application is designed for deployment on Vercel with API functions connecting to Supabase.
@@ -808,7 +940,7 @@ import StreamingResponse from '@/components/Chat/StreamingResponse';
 
 export default function ChatInterface() {
   const [query, setQuery] = useState('');
-  
+
   return (
     <div>
       <input
@@ -816,7 +948,7 @@ export default function ChatInterface() {
         onChange={(e) => setQuery(e.target.value)}
         placeholder="Ask a question..."
       />
-      
+
       <StreamingResponse
         query={query}
         showSources={true}
@@ -951,34 +1083,34 @@ Here's a key excerpt from the reward model implementation:
 class ClimateRewardModel:
     def __init__(self, model_name="distilbert-base-uncased", model_path=None):
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        
+
         if model_path and os.path.exists(model_path):
             self.model = AutoModelForSequenceClassification.from_pretrained(model_path)
         else:
             self.model = AutoModelForSequenceClassification.from_pretrained(
-                model_name, 
+                model_name,
                 num_labels=1  # Regression task for reward score
             )
-        
+
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)
-    
+
     def compute_reward(self, query, response):
         """Predict reward score for a query-response pair"""
         inputs = self.tokenizer(
-            query, response, 
-            return_tensors="pt", 
-            truncation=True, 
-            padding=True, 
+            query, response,
+            return_tensors="pt",
+            truncation=True,
+            padding=True,
             max_length=512
         ).to(self.device)
-        
+
         with torch.no_grad():
             outputs = self.model(**inputs)
             reward = outputs.logits.item()
-        
+
         return reward
-    
+
     def train(self, feedback_data, output_dir="data/reward_model", epochs=3):
         """Train the reward model on human feedback data"""
         # Implementation details...
@@ -1021,10 +1153,162 @@ The enhanced job search feature leverages user profile data and enrichment infor
 ### Usage
 
 1. Access the enhanced job search at `/jobs/enhanced-search`.
-2. For best results, complete the profile enrichment process first.
-3. Use the search filters to refine results by sector, skills, location, and more.
+
+## Authentication System
+
+The system uses NextAuth.js with Supabase for authentication. Currently, it supports email/password authentication, but Google authentication needs to be implemented.
+
+### Current Implementation
+
+```javascript
+// NextAuth configuration in app/api/auth/[...nextauth]/route.js
+const handler = NextAuth({
+  providers: [
+    CredentialsProvider({
+      name: 'Email and Password',
+      credentials: {
+        email: { label: 'Email', type: 'email' },
+        password: { label: 'Password', type: 'password' }
+      },
+      async authorize(credentials) {
+        // Authenticate with Supabase
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: credentials.email,
+          password: credentials.password,
+        });
+
+        if (error || !data.user) return null;
+
+        // Get user profile
+        const { data: profileData } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', data.user.id)
+          .single();
+
+        // Return user with profile data
+        return {
+          id: data.user.id,
+          email: data.user.email,
+          name: profileData?.full_name || data.user.email,
+          role: profileData?.role || 'user',
+          image: profileData?.avatar_url,
+          profile: profileData || {},
+        };
+      }
+    })
+  ],
+  // Additional configuration...
+});
+```
+
+### Google Authentication Setup (To Be Implemented)
+
+To add Google authentication:
+
+1. Create OAuth credentials in the Google Cloud Console
+2. Add the GoogleProvider to the NextAuth configuration:
+
+```javascript
+import GoogleProvider from 'next-auth/providers/google';
+
+const handler = NextAuth({
+  providers: [
+    GoogleProvider({
+      clientId: process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+    }),
+    // Existing CredentialsProvider...
+  ],
+  // Additional configuration...
+});
+```
+
+3. Add the required environment variables to `.env.local`:
+
+```
+GOOGLE_CLIENT_ID=your_google_client_id
+GOOGLE_CLIENT_SECRET=your_google_client_secret
+```
 
 ## Metrics Dashboard
+
+The system includes a comprehensive metrics dashboard for monitoring performance. The dashboard is available at `/admin/metrics` and provides insights into user engagement, profile enrichment, and job search activity.
+
+### Key Features
+
+- **Real-time Metrics**: Displays real-time metrics for user engagement and system performance
+- **Time-based Filtering**: Allows filtering metrics by time range (7 days, 30 days, 90 days)
+- **Chart Visualizations**: Provides visual representations of key metrics using Chart.js
+- **Detailed Statistics**: Shows detailed statistics for profile enrichment and job search activity
+
+### Implementation
+
+The metrics dashboard is implemented using:
+
+- **Frontend**: React components with Chart.js for visualizations
+- **Backend**: API endpoints that fetch metrics data from Supabase
+- **Database**: Metrics tables in Supabase that store event data
+
+```javascript
+// Sample metrics dashboard component
+const AdminMetricsDashboard = () => {
+  const [metricsData, setMetricsData] = useState(null);
+  const [timeRange, setTimeRange] = useState('7d'); // 7d, 30d, 90d
+
+  // Fetch metrics data
+  useEffect(() => {
+    const fetchMetrics = async () => {
+      const response = await fetch(`/api/admin/metrics?timeRange=${timeRange}`);
+      const data = await response.json();
+      setMetricsData(data);
+    };
+
+    fetchMetrics();
+  }, [timeRange]);
+
+  // Render charts and statistics
+  return (
+    <div className="metrics-dashboard">
+      {/* Time range selector */}
+      <div className="time-range-selector">
+        {/* Time range buttons */}
+      </div>
+
+      {/* Charts and statistics */}
+      <div className="metrics-charts">
+        {/* User engagement chart */}
+        {/* Profile enrichment chart */}
+        {/* Job search chart */}
+      </div>
+    </div>
+  );
+};
+```
+
+### Setup Requirements
+
+1. Ensure the metrics tables are created in Supabase:
+
+```sql
+CREATE TABLE public.metrics (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  event_type TEXT NOT NULL,
+  user_id UUID REFERENCES auth.users(id),
+  search_data JSONB,
+  enrichment_data JSONB,
+  verification_data JSONB,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+```
+
+2. Add the required environment variables to `.env.local`:
+
+```
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
+```
+
 
 The metrics dashboard provides comprehensive analytics on user engagement, profile enrichment, and job search activity within the Climate Economy Ecosystem.
 
@@ -1050,4 +1334,4 @@ The metrics system consists of:
 1. Access the metrics dashboard at `/admin/metrics`.
 2. Use the time range selectors to adjust the data timeframe.
 3. Navigate between different metric tabs (Overview, Profile Enrichment, Job Search).
-4. Export or share insights as needed for reporting. 
+4. Export or share insights as needed for reporting.

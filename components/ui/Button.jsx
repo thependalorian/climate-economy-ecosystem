@@ -1,68 +1,87 @@
-'use client';
+"use client";
 
 import React from 'react';
 import { cn } from '../../lib/utils';
-import { Loader2 } from 'lucide-react';
+import { Loader2 } from '../../lib/icons-shim';
 
 /**
  * Button Component
- * A reusable button component that follows ACT brand guidelines
+ * A versatile button component that supports various styles and states.
+ * When "asChild" is true, it clones the only child with merged props.
  * Location: /components/ui/Button.jsx
  */
-
-const Button = ({
-  children,
-  variant = 'primary',
+const Button = React.forwardRef(({
+  className,
+  variant = 'default',
   size = 'md',
-  className = '',
-  disabled = false,
-  loading = false,
-  onClick,
-  type = 'button',
+  asChild = false,
+  isLoading = false,
+  disabled,
+  children,
   ...props
-}) => {
-  const baseClasses = 'font-inter transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center';
-  
-  const variantClasses = {
-    primary: 'bg-spring-green text-midnight-forest hover:bg-spring-green/90 focus:ring-spring-green border-2 border-spring-green',
-    secondary: 'bg-moss-green text-white hover:bg-moss-green/90 focus:ring-moss-green border-2 border-moss-green',
-    tertiary: 'text-moss-green hover:text-spring-green bg-transparent hover:bg-spring-green/10 focus:ring-moss-green',
-    outline: 'bg-transparent border-2 border-spring-green text-midnight-forest hover:bg-spring-green/10 focus:ring-spring-green',
-    ghost: 'bg-transparent text-midnight-forest hover:bg-spring-green/10 focus:ring-spring-green',
-    danger: 'bg-red-500 text-white hover:bg-red-600 focus:ring-red-500',
-  };
-  
-  const sizeClasses = {
-    xs: 'text-xs px-2.5 py-1.5 rounded font-medium',
-    sm: 'text-sm px-3 py-2 rounded-md font-medium',
-    md: 'text-base px-5 py-2.5 rounded-md font-medium',
-    lg: 'text-lg px-6 py-3 rounded-md font-semibold',
+}, ref) => {
+  // Compute className
+  const variantClassNames = {
+    default: 'bg-primary text-primary-content hover:bg-primary-focus',
+    outline: 'border border-primary bg-transparent text-primary hover:bg-primary/10',
+    ghost: 'bg-transparent hover:bg-gray-100 text-gray-700',
+    link: 'bg-transparent underline-offset-4 hover:underline text-primary hover:bg-transparent',
+    destructive: 'bg-error text-error-content hover:bg-error-focus',
+    success: 'bg-success text-success-content hover:bg-success-focus',
+    secondary: 'bg-secondary text-secondary-content hover:bg-secondary-focus',
   };
 
-  const classes = cn(
-    baseClasses,
-    variantClasses[variant],
-    sizeClasses[size],
+  const sizeClassNames = {
+    sm: 'h-8 px-3 text-xs rounded-md',
+    md: 'h-10 px-4 py-2 rounded-md',
+    lg: 'h-12 px-6 text-lg rounded-md',
+    icon: 'h-10 w-10 rounded-full',
+  };
+
+  const computedClassName = cn(
+    'inline-flex items-center justify-center font-medium transition-colors',
+    'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2',
+    'disabled:opacity-50 disabled:pointer-events-none',
+    variantClassNames[variant],
+    sizeClassNames[size],
+    isLoading && 'opacity-70 pointer-events-none',
     className
   );
 
+  if (asChild) {
+    const child = React.Children.only(children);
+    // If the child is a React.Fragment, wrap its children in a <span> to apply the computedClassName
+    if (child.type === React.Fragment) {
+      return (
+        <span ref={ref} className={computedClassName} disabled={disabled || isLoading} {...props}>
+          {child.props.children}
+        </span>
+      );
+    }
+    return React.cloneElement(child, {
+      ...props,
+      ref,
+      className: cn(child.props.className, computedClassName),
+      disabled: disabled || isLoading || child.props.disabled
+    });
+  }
+
   return (
     <button
-      type={type}
-      className={classes}
-      disabled={disabled || loading}
-      onClick={onClick}
+      ref={ref}
+      className={computedClassName}
+      disabled={disabled || isLoading}
       {...props}
     >
-      {loading ? (
-        <Loader2 className="animate-spin mr-2" size={
-          size === 'sm' ? 16 : size === 'md' ? 18 : 20
-        } />
-      ) : null}
+      {isLoading && (
+        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+      )}
       {children}
     </button>
   );
-};
+});
+
+Button.displayName = 'Button';
 
 export { Button };
 
@@ -134,4 +153,7 @@ const IconButton = ({
   return button;
 };
 
-export { IconButton }; 
+export { IconButton };
+
+// Add default export at the end of the file
+export default Button; 

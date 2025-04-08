@@ -1,0 +1,56 @@
+[
+  {
+    "id": "db2bffd3-b6de-40b7-9e4e-6aa6325f9b58",
+    "chat_id": "4cadfb94-df57-4895-884d-ec6ae07c2a20",
+    "user_id": "test_user",
+    "message": "I can help you find clean energy job opportunities in Massachusetts. The state has a growing renewable energy sector with jobs in solar installation, energy efficiency, and offshore wind. Would you like me to search for specific roles or provide information about training programs?",
+    "feedback_type": "rating",
+    "feedback_score": 5,
+    "created_at": "2025-04-07T21:46:22.428067+00:00"
+  },
+  {
+    "id": "897f3505-e929-482b-a091-876d9d07a68a",
+    "chat_id": "1b83e0d8-c4af-426c-877d-c9f695a33156",
+    "user_id": "test_user",
+    "message": "Based on your background in electrical engineering, you might be interested in solar PV installation or grid modernization roles. Massachusetts has several companies like Solect Energy and Eversource that hire for these positions. Would you like more information about specific companies or training programs?",
+    "feedback_type": "rating",
+    "feedback_score": 5,
+    "created_at": "2025-04-07T21:46:22.428087+00:00"
+  },
+  {
+    "id": "e4140bf8-dc2c-4909-8349-a2f811506db2",
+    "chat_id": "1f90528a-4ea5-4ff6-a712-5046397b6eac",
+    "user_id": "test_user",
+    "message": "As a veteran with experience in logistics, you have valuable skills for the clean energy sector. Companies like Vineyard Wind and Ameresco often look for professionals with your background for supply chain and project management roles. The Mass Clean Energy Center also has resources specifically for veterans.",
+    "feedback_type": "rating",
+    "feedback_score": 5,
+    "created_at": "2025-04-07T21:46:22.428095+00:00"
+  },
+  {
+    "id": "d36ba27f-5f28-4c3e-bd44-01d473815bb5",
+    "chat_id": "d2d2e5cf-5ba4-46cb-9765-c2a076f93ffb",
+    "user_id": "test_user",
+    "message": "I don't have information about clean energy jobs in Massachusetts.",
+    "feedback_type": "rating",
+    "feedback_score": 1,
+    "created_at": "2025-04-07T21:46:22.428103+00:00"
+  },
+  {
+    "id": "a55c5f64-0a3f-4a34-b64f-2b11d07fc37f",
+    "chat_id": "3f0299bc-ed4b-455f-809a-9f9614de58cc",
+    "user_id": "test_user",
+    "message": "Your background doesn't seem relevant to clean energy careers.",
+    "feedback_type": "rating",
+    "feedback_score": 1,
+    "created_at": "2025-04-07T21:46:22.428111+00:00"
+  },
+  {
+    "id": "be0d1683-615b-41ad-9863-05bfcf2f88dd",
+    "chat_id": "3026f2a5-d1f0-4756-ab37-b56588435301",
+    "user_id": "test_user",
+    "message": "There aren't many opportunities for veterans in the clean energy sector.",
+    "feedback_type": "rating",
+    "feedback_score": 1,
+    "created_at": "2025-04-07T21:46:22.428118+00:00"
+  }
+]

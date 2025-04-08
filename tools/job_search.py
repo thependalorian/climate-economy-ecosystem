@@ -15,51 +15,82 @@ import sys
 import json
 import logging
 import uuid
-from typing import Dict, List, Any, Optional, Set
+from typing import Dict, List, Any, Optional, Set, Tuple
 from datetime import datetime, timezone, timedelta
+import pandas as pd
+import asyncio
 
 from dotenv import load_dotenv
 from supabase import create_client, Client
 
 # Add parent directory to sys.path to allow imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from constants import (
-    ACT_COMPANIES, 
-    ACT_COMPANY_NAMES,
-    get_companies_by_sector,
-    get_companies_by_focus,
-    get_companies_for_audience,
-    get_companies_by_skill
-)
 
-# Load environment variables
-load_dotenv()
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(module)s - %(funcName)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler('job_search.log')
-    ]
-)
+# Setup logging
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Initialize Supabase client
-supabase_url = os.getenv("SUPABASE_URL")
-supabase_key = os.getenv("SUPABASE_ANON_KEY")
-
-if not supabase_url or not supabase_key:
-    logger.error("SUPABASE_URL and SUPABASE_ANON_KEY environment variables are required")
-    sys.exit(1)
-
+# Try to import constants, but provide a fallback if it fails
 try:
-    supabase: Client = create_client(supabase_url, supabase_key)
-    logger.info("Successfully initialized Supabase client")
+    from constants import (
+        CLIMATE_REPORT_RESOURCES,
+        REQUIRED_REPORTS,
+        ACT_COMPANIES,
+        ACT_COMPANY_NAMES,
+        get_companies_by_sector,
+        get_companies_by_focus,
+        get_companies_for_audience,
+        get_companies_by_skill
+    )
+except ImportError:
+    logger.warning("Could not import constants, using fallbacks")
+    CLIMATE_REPORT_RESOURCES = []
+    REQUIRED_REPORTS = []
+    # Define a fallback for ACT_COMPANIES
+    ACT_COMPANIES = [
+        {"name": "Solaris Energy", "sector": "Solar", "location": "Boston", "is_veteran_friendly": True},
+        {"name": "WindTech Solutions", "sector": "Wind", "location": "Worcester"},
+        {"name": "EcoGrid Systems", "sector": "Energy Efficiency", "location": "Cambridge"},
+        {"name": "GreenBuild Contractors", "sector": "Green Building", "location": "Springfield"},
+        {"name": "BatteryStore Inc.", "sector": "Battery Storage", "location": "Boston", "is_ej_friendly": True}
+    ]
+
+# Function to get ACT companies from Supabase if available
+async def get_act_companies_from_db():
+    """Retrieve ACT companies from the database instead of constants"""
+    try:
+        from utils import supabase
+        response = supabase.table("companies").select("*").execute()
+        if response and hasattr(response, 'data') and response.data:
+            logger.info(f"Retrieved {len(response.data)} companies from database")
+            return response.data
+        else:
+            logger.warning("No companies found in database, using fallback")
+            return ACT_COMPANIES
+    except Exception as e:
+        logger.error(f"Error retrieving companies from database: {e}")
+        return ACT_COMPANIES
+
+# Initialize database connection (if needed)
+try:
+    from supabase import create_client, Client
+    from dotenv import load_dotenv
+    
+    # Load environment variables
+    load_dotenv()
+    
+    # Initialize Supabase client
+    supabase_url = os.getenv('SUPABASE_URL')
+    supabase_key = os.getenv('SUPABASE_SERVICE_KEY')
+    
+    if supabase_url and supabase_key:
+        supabase: Client = create_client(supabase_url=supabase_url, supabase_key=supabase_key)
+    else:
+        logger.warning("Missing Supabase credentials")
+        supabase = None
 except Exception as e:
-    logger.error(f"Failed to initialize Supabase client: {str(e)}")
-    sys.exit(1)
+    logger.error(f"Error initializing Supabase: {e}")
+    supabase = None
 
 class JobSearchTool:
     """Tool for searching jobs from our defined companies."""

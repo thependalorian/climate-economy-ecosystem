@@ -3,8 +3,8 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowRight, Eye, EyeOff } from 'lucide-react';
-import SignupForm from '@/components/SignupForm';
+import { ArrowRight, Eye, EyeOff } from '../../../lib/icons-shim';
+import SignupForm from '@/components/Auth/SignupForm';
 import Image from 'next/image';
 
 /**

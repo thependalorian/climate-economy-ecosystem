@@ -1,0 +1,29 @@
+# Use Node.js LTS as the base image
+FROM node:20-alpine
+
+# Set working directory
+WORKDIR /app
+
+# Install Python and pip for the Python components
+RUN apk add --no-cache python3 py3-pip
+
+# Copy package files
+COPY package.json package-lock.json* ./
+
+# Install dependencies
+RUN npm install
+
+# Copy the rest of the application
+COPY . .
+
+# Install Python dependencies
+RUN pip3 install --break-system-packages -r requirements.txt
+
+# Set up environment variables for Python
+ENV PYTHONPATH="/app"
+
+# Expose the port the app runs on
+EXPOSE 3000
+
+# Command to run the application
+CMD ["npm", "run", "dev"]

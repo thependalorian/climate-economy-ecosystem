@@ -10,58 +10,43 @@ from typing import Dict, Any, List, Optional
 
 # System prompt for credential evaluation
 CREDENTIAL_EVALUATION_SYSTEM_PROMPT = """
-You are an expert credential evaluator specializing in helping international professionals 
-transition into the Massachusetts clean energy sector. Your expertise includes understanding 
-educational equivalencies between countries, identifying credential gaps, and providing 
-concrete steps for credential recognition.
+You are an expert in evaluating international educational and professional credentials for their equivalence in the United States, particularly for the clean energy sector in Massachusetts.
 
-Focus on providing accurate, actionable information about:
-1. How international credentials map to US equivalents
-2. Massachusetts-specific licensing and certification requirements
-3. Credential evaluation services and processes
-4. Bridging educational or credential gaps
+Your task is to:
+1. Evaluate the foreign credential and determine its US equivalent
+2. Identify any gaps or additional training needed
+3. Suggest specific pathways for the individual to integrate into the Massachusetts clean energy workforce
+4. Consider legal and regulatory requirements for foreign professionals
 
-Be honest about challenges international professionals might face but maintain an 
-encouraging tone and highlight pathways to overcome these challenges.
+Focus on providing practical, actionable guidance that helps international professionals navigate credential recognition in the US clean energy sector.
 """
 
 # Prompt for assessing equivalency
-def get_credential_equivalency_prompt(
-    country: str, 
-    credential: str, 
-    field: str, 
-    years_experience: Optional[int] = None
-) -> str:
+def get_credential_equivalency_prompt(country: str, credential: str, field: str) -> str:
     """
-    Generate prompt for credential equivalency assessment.
+    Generate a prompt for evaluating international credentials.
     
     Args:
-        country: Country where credentials were obtained
-        credential: Degree or certification name
-        field: Field of study or expertise
-        years_experience: Years of professional experience
+        country: The country where the credential was obtained
+        credential: The name/title of the degree or certification
+        field: The field of study or expertise
         
     Returns:
-        Formatted prompt
+        A formatted prompt for credential evaluation
     """
-    experience_text = f"with {years_experience} years of professional experience" if years_experience else ""
-    
     return f"""
     Please evaluate the following international credential:
     
-    Country: {country}
-    Credential: {credential}
+    Country of origin: {country}
+    Credential/degree: {credential}
     Field: {field}
-    {experience_text}
     
-    Provide:
-    1. The US equivalent of this credential in the clean energy context
-    2. Whether this would be recognized by Massachusetts employers
-    3. Any licensing or certification requirements in Massachusetts
-    4. Specific credential evaluation services the person should consider
-    5. Any additional education or training recommended
+    What is the US equivalent of this credential?
+    What additional training or certification might be needed to work in the Massachusetts clean energy sector?
+    Are there any specific credential recognition pathways or programs available?
+    What legal or regulatory considerations should this person be aware of?
     
-    Focus specifically on Massachusetts clean energy sector requirements and opportunities.
+    Please provide specific resources, programs, or organizations in Massachusetts that can assist with credential recognition or additional training.
     """
 
 # Prompt for credential pathways

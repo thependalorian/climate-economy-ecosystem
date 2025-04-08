@@ -25,7 +25,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Initialize OpenAI client
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+openai.api_key = os.getenv("OPENAI_API_KEY")
+client = openai
 
 # Clean energy skills database
 CLEAN_ENERGY_SKILLS = [

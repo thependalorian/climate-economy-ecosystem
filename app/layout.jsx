@@ -6,8 +6,9 @@ export const metadata = {
   description: 'Connecting job seekers with clean energy opportunities in Massachusetts',
 };
 
-// Import the client layout which will handle all the client-side logic
+// Import the client components
 import ClientLayout from './client-layout';
+import Providers from './providers';
 
 /**
  * Root Layout - Server Component
@@ -17,7 +18,9 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en">
       <body>
-        <ClientLayout>{children}</ClientLayout>
+        <Providers>
+          <ClientLayout>{children}</ClientLayout>
+        </Providers>
       </body>
     </html>
   );
