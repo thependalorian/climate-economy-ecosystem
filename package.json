@@ -26,7 +26,8 @@
     "docker:prod:build": "docker-compose -f docker-compose.prod.yml build",
     "docker:prod:up": "docker-compose -f docker-compose.prod.yml up -d",
     "docker:prod:down": "docker-compose -f docker-compose.prod.yml down",
-    "docker:export": "./scripts/export-docker-images.sh"
+    "docker:export": "./scripts/export-docker-images.sh",
+    "generate-keys": "node scripts/generate-keys.js"
   },
   "dependencies": {
     "@radix-ui/react-avatar": "^1.0.4",

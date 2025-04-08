@@ -23,9 +23,16 @@ No other dependencies are required as everything runs inside Docker containers.
    cp .env.example .env
    ```
 
-   Edit the `.env` file to add your API keys if needed. For local development, the default values should work.
+3. Generate secure keys for local development:
+   ```bash
+   npm run generate-keys
+   ```
 
-3. Start the application in production mode:
+   This script will generate secure random keys for JWT tokens and other secrets, and update your `.env` file with these values.
+
+4. Edit the `.env` file to add any additional API keys if needed. For local development, the default values should work.
+
+5. Start the application in production mode:
    ```bash
    npm run docker:prod
    ```
@@ -159,3 +166,22 @@ This option is faster as colleagues won't need to build the images themselves:
    ```
 
 This approach is faster for colleagues as they don't need to build the images, which can take time especially for the Python dependencies.
+
+## Security Considerations
+
+### Environment Variables and Secrets
+
+When sharing the application with colleagues, be careful with sensitive information:
+
+1. **Never share your `.env` file directly**
+   - Each developer should create their own `.env` file using the `.env.example` template
+   - They should run `npm run generate-keys` to create their own secure keys
+
+2. **Use different secrets for shared environments**
+   - Development, staging, and production environments should use different secrets
+   - Store production secrets in a secure vault or secret management system
+
+3. **Docker security**
+   - When exporting Docker images, ensure they don't contain sensitive information
+   - The `.env` file is mounted as a volume and not baked into the image
+   - Review Docker images for security vulnerabilities before sharing

@@ -26,16 +26,16 @@ const createLangSmithClient = langsmithPackage.createLangSmithClient || (() => {
 const { LangChainTracer } = langsmithPackage;
 
 // Initialize Supabase client
-const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
-const supabase = createClient(supabaseUrl, supabaseKey);
+const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
 
 // System prompt
 const SYSTEM_PROMPT = `You are a specialized assistant for the Massachusetts Clean Tech Ecosystem. Your purpose is to help individuals in Massachusetts find jobs, training, and resources in the clean energy economy.
 
 Special considerations:
 1. For Veterans: Help translate military experience to clean energy careers
-2. For International Professionals: Help evaluate overseas credentials for Massachusetts 
+2. For International Professionals: Help evaluate overseas credentials for Massachusetts
 3. For Environmental Justice Communities: Prioritize opportunities in Gateway Cities
 
 Focus on Massachusetts-specific information whenever possible. If you don't have specific Massachusetts information, clearly indicate this.
@@ -54,39 +54,39 @@ export async function POST(request) {
     run_id: runId,
     name: 'streaming_chat'
   });
-  
+
   // Start timing
   const startTime = Date.now();
-  
+
   try {
     // Track this as a trace
     await tracer.startTrace({
       name: 'streaming_chat_request',
-      input: { 
+      input: {
         headers: request.headers,
         method: request.method
       }
     });
-    
+
     // Get user session for authentication
     const session = await auth();
     const userId = session?.user?.id || 'anonymous';
-    
+
     // Extract query and model from request
     const body = await request.json();
     const { query, model = 'gpt-4o' } = body;
-    
+
     if (!query || query.trim() === '') {
       await tracer.endTrace({
         output: { error: 'Missing query parameter' },
         error: new Error('Missing query parameter')
       });
       return NextResponse.json(
-        { message: 'Query parameter is required' }, 
+        { message: 'Query parameter is required' },
         { status: 400 }
       );
     }
-    
+
     // Track search event
     await metrics_service.track_event(
       'streaming_chat',
@@ -97,40 +97,40 @@ export async function POST(request) {
         is_streaming: true
       }
     );
-    
+
     // Get relevant context for the query
     const contextStep = await tracer.trackStep('retrieve_context', {
       input: { query }
     });
-    
+
     const context = await getRelevantContext(query, tracer);
-    
+
     await tracer.endStep(contextStep, {
-      output: { 
+      output: {
         contextCount: context.length,
         sources: context.map(c => c.source)
       }
     });
-    
+
     // Format context for the prompt
     const contextText = context
       .map(item => `Source: ${item.source}\n${item.content}`)
       .join('\n\n');
-    
+
     // Create messages array for the chat completion
     const messages = [
       { role: 'system', content: SYSTEM_PROMPT },
       { role: 'user', content: `Massachusetts Clean Energy Query: ${query}\n\nRelevant Context:\n${contextText}` }
     ];
-    
+
     // Create a stream from OpenAI
     const streamStep = await tracer.trackStep('generate_stream', {
-      input: { 
+      input: {
         model,
         messages: messages.map(m => ({ role: m.role, content: m.content.substring(0, 100) + '...' }))
       }
     });
-    
+
     const stream = await openai.chat.completions.create({
       model,
       messages,
@@ -138,12 +138,12 @@ export async function POST(request) {
       temperature: 0.7,
       max_tokens: 1500
     });
-    
+
     // Create a readable stream to return to the client
     const encoder = new TextEncoder();
     let responseText = '';
     let tokenCount = 0;
-    
+
     const readableStream = new ReadableStream({
       async start(controller) {
         // Process each chunk from OpenAI
@@ -152,34 +152,34 @@ export async function POST(request) {
             const content = chunk.choices[0].delta.content;
             responseText += content;
             tokenCount++;
-            
+
             // Send the chunk to the client
             controller.enqueue(encoder.encode(content));
           }
         }
-        
+
         // Send the sources at the end as JSON
         const sources = context.map(item => ({
           source: item.source,
           url: item.metadata?.url || '',
           relevance: item.relevance_score || 0
         }));
-        
+
         controller.enqueue(encoder.encode(`\n\nSOURCES:${JSON.stringify(sources)}`));
         controller.close();
-        
+
         // End the streaming step
         await tracer.endStep(streamStep, {
-          output: { 
+          output: {
             tokenCount,
             responseLength: responseText.length
           }
         });
-        
+
         // Calculate performance metrics
         const endTime = Date.now();
         const duration = endTime - startTime;
-        
+
         // Track API performance
         await metrics_service.track_api_performance(
           '/api/chat/stream',
@@ -188,10 +188,10 @@ export async function POST(request) {
           userId,
           { query, model }
         );
-        
+
         // Store the chat in memory (asynchronously, don't wait)
         storeChat(userId, query, responseText);
-        
+
         // End trace with results
         await tracer.endTrace({
           output: {
@@ -206,7 +206,7 @@ export async function POST(request) {
         });
       }
     });
-    
+
     // Return the stream
     return new Response(readableStream, {
       headers: {
@@ -217,13 +217,13 @@ export async function POST(request) {
     });
   } catch (error) {
     console.error('Streaming chat error:', error);
-    
+
     // End tracing with error
     await tracer.endTrace({
       output: { error: error.message },
       error
     });
-    
+
     // Return error response
     return NextResponse.json(
       { message: 'Error generating response', error: error.message },
@@ -237,19 +237,19 @@ export async function POST(request) {
  */
 async function getRelevantContext(query, tracer) {
   const context = [];
-  
+
   try {
     // Get database results first
     const dbStep = await tracer.trackStep('database_retrieval', {
       input: { query }
     });
-    
+
     try {
       // Calculate embedding for vector search
       const { data: embedding } = await supabase.functions.invoke('embed-text', {
         body: { text: query }
       });
-      
+
       if (embedding?.vector) {
         // Perform vector search
         const { data: matches, error } = await supabase
@@ -263,7 +263,7 @@ async function getRelevantContext(query, tracer) {
             match_threshold: 0.6,
             match_count: 5
           });
-        
+
         if (matches && !error) {
           // Add database results to context
           for (const match of matches) {
@@ -277,7 +277,7 @@ async function getRelevantContext(query, tracer) {
           }
         }
       }
-      
+
       await tracer.endStep(dbStep, {
         output: { resultCount: context.length }
       });
@@ -288,22 +288,22 @@ async function getRelevantContext(query, tracer) {
         error: dbError
       });
     }
-    
+
     // If we don't have enough database results, supplement with web search
     if (context.length < 3) {
       const webStep = await tracer.trackStep('web_search', {
         input: { query }
       });
-      
+
       try {
         // Append Massachusetts if not already in query
         let searchQuery = query;
-        if (!query.toLowerCase().includes('massachusetts') && 
-            !query.toLowerCase().includes('mass') && 
+        if (!query.toLowerCase().includes('massachusetts') &&
+            !query.toLowerCase().includes('mass') &&
             !query.toLowerCase().includes('ma')) {
           searchQuery = `${query} Massachusetts`;
         }
-        
+
         // Call Serper API for web search
         const response = await fetch('https://google.serper.dev/search', {
           method: 'POST',
@@ -316,16 +316,16 @@ async function getRelevantContext(query, tracer) {
             num: 5
           })
         });
-        
+
         if (response.ok) {
           const data = await response.json();
-          
+
           // Add web results to context
           if (data.organic && data.organic.length > 0) {
             data.organic.forEach((item, index) => {
               // Calculate a score (decreasing by position)
               const positionScore = 1 - (index * 0.1);
-              
+
               context.push({
                 source: 'web',
                 content: `Title: ${item.title}\nSnippet: ${item.snippet}\nURL: ${item.link}`,
@@ -335,9 +335,9 @@ async function getRelevantContext(query, tracer) {
             });
           }
         }
-        
+
         await tracer.endStep(webStep, {
-          output: { 
+          output: {
             resultCount: context.length - (context.filter(c => c.source === 'database').length)
           }
         });
@@ -349,10 +349,10 @@ async function getRelevantContext(query, tracer) {
         });
       }
     }
-    
+
     // Sort by relevance score
     context.sort((a, b) => (b.relevance_score || 0) - (a.relevance_score || 0));
-    
+
     // Limit to top 5 most relevant items
     return context.slice(0, 5);
   } catch (error) {
@@ -375,7 +375,7 @@ async function storeChat(userId, query, response) {
           content: `Q: ${query}\nA: ${response}`,
           category: 'conversation',
           source: 'assistant',
-          metadata: { 
+          metadata: {
             is_conversation: true,
             timestamp: new Date().toISOString()
           }
@@ -384,4 +384,4 @@ async function storeChat(userId, query, response) {
   } catch (error) {
     console.error('Error storing chat:', error);
   }
-} 
+}

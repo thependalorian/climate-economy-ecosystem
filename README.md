@@ -803,6 +803,9 @@ cd climate-economy-ecosystem
 # Create .env file with your configuration
 cp .env.example .env
 
+# Generate secure keys for local development
+npm run generate-keys
+
 # Start the application in production mode
 npm run docker:prod
 
@@ -836,6 +839,28 @@ npm run docker:prod
 - **Run migrations**: `npm run docker:migrate`
 
 **For detailed Docker setup instructions, see [DOCKER_SETUP.md](DOCKER_SETUP.md)**
+
+### Security Best Practices
+
+#### Environment Variables and Secrets
+
+This project uses environment variables to manage sensitive information like API keys and database credentials. Follow these best practices:
+
+1. **Never commit secrets to version control**
+   - The `.env` file is included in `.gitignore` to prevent accidental commits
+   - Use `npm run generate-keys` to create secure random keys for local development
+
+2. **Use different secrets for each environment**
+   - Development, testing, and production should use different keys
+   - For production, use a secure secret management system
+
+3. **Rotate secrets regularly**
+   - Change your JWT secrets and API keys periodically
+   - Update environment variables after rotation
+
+4. **Limit access to secrets**
+   - Only share secrets with team members who need them
+   - Use role-based access control for production secrets
 
 ## Deployment
 The application is designed for deployment on Vercel with API functions connecting to Supabase.
